@@ -72,6 +72,8 @@ typedef MPI_Op comm_cop;
 #ifdef __UPC_NB__
 #include <upc_nb.h>
 typedef upc_handle_t comm_req;
+#else
+typedef int comm_req;
 #endif 
 #ifdef __UPC_CASTABLE__
 #include <upc_castable.h>
