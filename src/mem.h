@@ -127,7 +127,12 @@ static void *array_reserve_(struct array *a, size_t min, size_t size,
   if(max<min) {
     max+=max/2+1;
     if(max<min) max=min;
-    array_resize_(a,max,size,file,line);
+    if (a->ptr == 0) {
+      array_init_(a,max,size,file,line);
+    }
+    else {
+      array_resize_(a,max,size,file,line);
+    }
   }
   return a->ptr;
 }
