@@ -8,7 +8,7 @@
 #include <comm.h>
 
 
-#ifdef HAVE_MPI
+#ifdef MPI
 #include <mpi.h>
 #endif
 
@@ -19,7 +19,7 @@
 
 void setup() {
   int rank;
-#ifdef HAVE_MPI
+#ifdef MPI
   MPI_Init(NULL, NULL);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #elif __UPC__
@@ -30,7 +30,7 @@ void setup() {
 }
 
 void teardown() {
-#ifdef HAVE_MPI
+#ifdef MPI
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();  
 #endif
@@ -41,7 +41,7 @@ START_TEST(test_init) {
   comm_ext ce;
   int np;
 
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;
 #else
   ce = 0;
@@ -49,7 +49,7 @@ START_TEST(test_init) {
 
   comm_init(&c, ce);
 
-#ifdef HAVE_MPI
+#ifdef MPI
   MPI_Comm_size(ce, &np);
   fail_unless(c.np == np);  
 #elif defined(__UPC__)
@@ -70,7 +70,7 @@ START_TEST(test_alloc) {
   size_t n;
   int i;
 
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;
 #else
   ce = 0;
@@ -115,7 +115,7 @@ START_TEST(test_free) {
   struct comm c;
   comm_ext ce;
 
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;
 #else
   ce = 0;
@@ -124,7 +124,7 @@ START_TEST(test_free) {
   comm_init(&c, ce);
 
   comm_free(&c);  
-#ifdef HAVE_MPI
+#ifdef MPI
   fail_unless(c.c == MPI_COMM_NULL);
 #elif defined(__UPC__)
   fail_unless(c.buf_dir == NULL);
@@ -135,7 +135,7 @@ START_TEST(test_free) {
 
 
   comm_free(&c);  
-#ifdef HAVE_MPI
+#ifdef MPI
   fail_unless(c.c == MPI_COMM_NULL);
 #elif defined(__UPC__)
   fail_unless(c.buf_dir == NULL);
@@ -159,7 +159,7 @@ START_TEST(test_reduce) {
 
   int np;
 
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;
   MPI_Comm_size(ce, &np);
 #elif __UPC__
@@ -200,7 +200,7 @@ START_TEST(test_allreduce) {
   double double_v[2], double_glb[2];
   int size;
 
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;
   MPI_Comm_size(ce, &size);
 #elif __UPC__
@@ -273,7 +273,7 @@ START_TEST(test_scan) {
   comm_ext ce;
   ulong sum[2],r[2],v,check_v;
   int rank, size;
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;    
   MPI_Comm_rank(ce, &rank);
   MPI_Comm_size(ce, &size);
@@ -302,7 +302,7 @@ START_TEST(test_dot) {
   comm_ext ce;
   double v[5], w[5], dot;
   int i, rank, size;
-#ifdef HAVE_MPI
+#ifdef MPI
   ce = MPI_COMM_WORLD;    
   MPI_Comm_rank(ce, &rank);
   MPI_Comm_size(ce, &size);
