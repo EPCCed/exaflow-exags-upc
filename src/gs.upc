@@ -971,15 +971,16 @@ static void allreduce_setup(struct gs_remote *r, struct gs_topology *top,
 static void dry_run_time(double times[3], const struct gs_remote *r,
                          const struct comm *comm, buffer *buf)
 {
-  int i; double t;
+  int i; double t0, t;
   buffer_reserve(buf,gs_dom_size[gs_double]*r->buffer_size);
   for(i= 2;i;--i)
     r->exec(0,mode_dry_run,1,gs_double,gs_add,0,r->data,comm,buf->ptr);
-  comm_barrier(comm);
-  t = comm_time();
+  comm_barrier((const comm_hdl) comm);
+  comm_time(&t0);
   for(i=10;i;--i)
     r->exec(0,mode_dry_run,1,gs_double,gs_add,0,r->data,comm,buf->ptr);
-  t = (comm_time() - t)/10;
+  comm_time(&t);
+  t = (t - t0)/10;
   times[0] = t/comm->np, times[1] = t, times[2] = t;
   comm_allreduce(comm,gs_double,gs_add, &times[0],1, &t);
   comm_allreduce(comm,gs_double,gs_min, &times[1],1, &t);
@@ -1137,7 +1138,7 @@ struct gs_data *gs_setup(const slong *id, uint n, const struct comm *comm,
                          int unique, gs_method method, int verbose)
 {
   struct gs_data *gsh = tmalloc(struct gs_data,1);
-  comm_dup(&gsh->comm,comm);
+  comm_dup(&gsh->comm, (comm_hdl*) &comm);
   gs_setup_aux(gsh,id,n,unique,method,verbose);
   return gsh;
 }
@@ -1179,7 +1180,6 @@ void gs_unique(slong *id, uint n, const struct comm *comm)
 #define cgs_setup PREFIXED_NAME(gs_setup)
 #define cgs_free  PREFIXED_NAME(gs_free )
 
-#define fgs_setup_pick FORTRAN_NAME(gs_setup_pick,GS_SETUP_PICK)
 #define fgs_setup      FORTRAN_NAME(gs_setup     ,GS_SETUP     )
 #define fgs            FORTRAN_NAME(gs_op        ,GS_OP        )
 #define fgs_vec        FORTRAN_NAME(gs_op_vec    ,GS_OP_VEC    )
@@ -1191,24 +1191,35 @@ static struct gs_data **fgs_info = 0;
 static int fgs_max = 0;
 static int fgs_n = 0;
 
-void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
-                    const MPI_Fint *comm, const sint *np, const sint *method)
+void fgs_setup(sint *handle, const slong id[], const sint *n,
+               const comm_hdl *chp, const sint *np)
 {
   struct gs_data *gsh;
+
+#ifdef MPI
+  comm_hdl ch;
+  int cid, cnp;
+#endif
+
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-  comm_init_check(&gsh->comm,*comm,*np);
-  gs_setup_aux(gsh,id,*n,0,*method,1);
+
+#ifdef MPI
+  comm_dup(*chp,&ch);
+  comm_id(ch,&cid);
+  comm_np(ch,&cnp);
+  gsh->comm.h = ch;
+  gsh->comm.id = cid;
+  gsh->comm.np = cnp;
+#elif __UPC__
+  comm_dup(*chp, (comm_hdl*) &gsh->comm);
+#endif
+
+  gs_setup_aux(gsh,id,*n,0,gs_auto,1);
   *handle = fgs_n++;
 }
 
-void fgs_setup(sint *handle, const slong id[], const sint *n,
-               const MPI_Fint *comm, const sint *np)
-{
-  const sint method = gs_auto;
-  fgs_setup_pick(handle,id,n,comm,np,&method);
-}
 
 static void fgs_check_handle(sint handle, const char *func, unsigned line)
 {
