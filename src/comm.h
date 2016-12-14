@@ -61,11 +61,12 @@
          
 */
 
-#ifdef HAVE_MPI
+#ifdef MPI
 #include <mpi.h>
-typedef MPI_Comm comm_ext;
+typedef MPI_Comm comm_hdl;
 typedef MPI_Request comm_req;
-typedef MPI_Op comm_cop;
+typedef MPI_Op comm_op;
+typedef MPI_Datatype comm_type;
 #elif __UPC__
 #include <upc.h>
 #include <upc_collective.h>
@@ -78,16 +79,40 @@ typedef int comm_req;
 #ifdef __UPC_CASTABLE__
 #include <upc_castable.h>
 #endif
-typedef int comm_ext;
-typedef upc_op_t comm_cop;
+typedef struct comm * comm_hdl;
+typedef upc_op_t comm_op;
+typedef upc_type_t comm_type;
 typedef int MPI_Fint;
 #else
-typedef int comm_ext;
+typedef int comm_hdl;
 typedef int comm_req;
-typedef int comm_cop;
+typedef int comm_op;
+typedef int comm_type;
 typedef int MPI_Fint;
 #endif
 
+
+#define comm_init      PREFIXED_NAME(comm_init     )
+#define comm_finalize  PREFIXED_NAME(comm_finalize )
+
+#define comm_dup       PREFIXED_NAME(comm_dup      )
+#define comm_world     PREFIXED_NAME(comm_world    )
+#define comm_free      PREFIXED_NAME(comm_free     )
+
+#define comm_id        PREFIXED_NAME(comm_id       )
+#define comm_np        PREFIXED_NAME(comm_np       )
+
+#define comm_type_int  PREFIXED_NAME(comm_type_int )
+#define comm_type_int8 PREFIXED_NAME(comm_type_int8)
+#define comm_type_real PREFIXED_NAME(comm_type_real)
+#define comm_type_dp   PREFIXED_NAME(comm_type_dp  )
+#define comm_tag_ub    PREFIXED_NAME(comm_tag_ub   )
+#define comm_time      PREFIXED_NAME(comm_time     )
+
+#define comm_barrier   PREFIXED_NAME(comm_barrier  )
+#define comm_bcast     PREFIXED_NAME(comm_bcast    )
+
+#define comm_allreduce_cdom PREFIXED_NAME(comm_allreduce_cdom)
 #define comm_allreduce PREFIXED_NAME(comm_allreduce)
 #define comm_scan      PREFIXED_NAME(comm_scan     )
 #define comm_dot       PREFIXED_NAME(comm_dot      )
@@ -101,21 +126,37 @@ extern uint comm_gbl_id, comm_gbl_np;
 
 struct comm {
   uint id, np;
-  comm_ext c;
 #ifdef __UPC__
   shared[] char *shared *buf_dir; /* Global directory of buffers */
-  shared strict int *flgs;
+  shared int *flgs;
   char *buf;			  /* Local part of buffers */
   size_t buf_len;		  /* Shared buffer size */
+#elif
+  comm_hdl h;
 #endif
 };
 
-static void comm_init(struct comm *c, comm_ext ce);
-/* (macro) static void comm_init_check(struct comm *c, MPI_Fint ce, uint np); */
-/* (macro) static void comm_dup(struct comm *d, const struct comm *s); */
-static void comm_free(struct comm *c);
-static double comm_time(void);
-static void comm_barrier(const struct comm *c);
+void comm_init(void);
+void comm_finalize(void);
+
+void comm_dup(const comm_hdl ch, comm_hdl *chp);
+void comm_world(comm_hdl *chp);
+void comm_free(comm_hdl ch);
+
+void comm_id(const comm_hdl ch, int *id);
+void comm_np(const comm_hdl ch, int *np);
+
+void comm_type_int(comm_type *ct);
+void comm_type_int8(comm_type *ct);
+void comm_type_real(comm_type *ct);
+void comm_type_dp(comm_type *ct);
+void comm_tag_ub(const comm_hdl ch, int *ub);
+void comm_time(double *tm);
+
+void comm_barrier(const comm_hdl ch);
+void comm_bcast(const comm_hdl ch, void *p, size_t n, uint root);
+
+
 static void comm_recv(const struct comm *c, void *p, size_t n,
                       uint src, int tag);
 static void comm_send(const struct comm *c, void *p, size_t n,
@@ -126,18 +167,17 @@ static void comm_isend(comm_req *req, const struct comm *c,
                        void *p, size_t n, uint dst, int tag);
 static void comm_wait(comm_req *req, int n);
 
-#ifdef __UPC__
-static int comm_alloc(struct comm *c, size_t n);
-#endif
-
-
-double comm_dot(const struct comm *comm, double *v, double *w, uint n);
 
 #ifdef GS_DEFS_H
+void comm_allreduce_cdom(const comm_hdl ch, comm_type cdom, gs_op op,
+                         void *v, uint vn, void *buf);
+
 void comm_allreduce(const struct comm *com, gs_dom dom, gs_op op,
                           void *v, uint vn, void *buf);
 void comm_scan(void *scan, const struct comm *com, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer);
+
+double comm_dot(const struct comm *comm, double *v, double *w, uint n);
 
 #define DEFINE_REDUCE(T) \
 T PREFIXED_NAME(comm_reduce__##T)( \
@@ -158,139 +198,10 @@ GS_FOR_EACH_DOMAIN(DEFINE_REDUCE)
   Code for static (inline) functions
   ----------------------------------------------------------------------------*/
 
-static void comm_init(struct comm *c, comm_ext ce)
-{
-#ifdef HAVE_MPI
-  int i;
-  MPI_Comm_dup(ce, &c->c);
-  MPI_Comm_rank(c->c,&i), comm_gbl_id=c->id=i;
-  MPI_Comm_size(c->c,&i), comm_gbl_np=c->np=i;
-#elif __UPC__
-  c->id = MYTHREAD, c->np = THREADS;  
-  c->buf_len = 0;
-  c->buf_dir = NULL;
-  c->buf = NULL;
-  c->flgs = NULL;
-#else
-  c->id = 0, c->np = 1;
-#endif
-}
-
-static void comm_init_check_(struct comm *c, MPI_Fint ce, uint np,
-                             const char *file, unsigned line)
-{
-#ifdef HAVE_MPI
-  comm_init(c,MPI_Comm_f2c(ce));
-  if(c->np != np)
-    fail(1,file,line,"comm_init_check: passed P=%u, "
-                     "but MPI_Comm_size gives P=%u",
-                     (unsigned)np,(unsigned)c->np);
-#else
-  comm_init(c,0);
-  if(np != 1)
-    fail(1,file,line,"comm_init_check: passed P=%u, "
-                     "but not compiled with -DMPI",(unsigned)np);
-#endif
-}
-#define comm_init_check(c,ce,np) comm_init_check_(c,ce,np,__FILE__,__LINE__)
-
-
-static void comm_dup_(struct comm *d, const struct comm *s,
-                      const char *file, unsigned line)
-{
-  d->id = s->id, d->np = s->np;
-#ifdef HAVE_MPI
-  MPI_Comm_dup(s->c,&d->c);
-#else
-  if(s->np!=1) fail(1,file,line,"%s not compiled with -DMPI\n",file);
-#endif
-}
-#define comm_dup(d,s) comm_dup_(d,s,__FILE__,__LINE__)
-
-#ifdef __UPC__
-static int comm_alloc(struct comm *c, size_t n) 
-{
-  shared[] char *tmp;
-  
-  if (c->buf_len > 0 && c->buf_len >= n) 
-    return 0;
-  
-  if (c->flgs == NULL) 
-    c->flgs = upc_all_alloc(THREADS, sizeof(int));
-
-  if (c->buf_dir == NULL)
-    c->buf_dir = upc_all_alloc(THREADS, sizeof(shared[] char *shared));
-  
-  if (c->buf != NULL) 
-    tmp = (shared[] char *) c->buf_dir[MYTHREAD];
-  
-#if defined(__GUPC__) || defined(__clang_upc__)
-  c->buf_dir[MYTHREAD] = upc_alloc(n);
-#else
-  c->buf_dir[MYTHREAD] = (shared[] char *shared) upc_alloc(n);
-#endif    
-  upc_barrier;
-  
-  if (c->buf_len != 0) {
-    upc_memcpy(c->buf_dir[MYTHREAD], tmp, c->buf_len);
-    upc_free(tmp);
-  }
-  
-  c->buf_len = n;
-  
-#if defined(__UPC_CASTABLE__)
-    c->buf = (char *) upc_cast(&c->buf_dir[MYTHREAD][0]);
-#else
-    c->buf = (char *) &c->buf_dir[MYTHREAD][0];
-#endif
-
-
-  return 0;
-}
-#endif
-
-static void comm_free(struct comm *c)
-{
-#ifdef HAVE_MPI
-  MPI_Comm_free(&c->c);
-#elif defined(__UPC__)
-  upc_barrier;
-  if (c->buf_dir)
-    upc_free(c->buf_dir[MYTHREAD]);
-  upc_barrier;
-  if (c->id == 0) {
-    upc_free(c->buf_dir);
-    upc_free(c->flgs);
-  }
-  c->buf_dir = NULL;
-  c->buf = NULL;
-  c->buf_len = 0;
-  c->flgs = NULL;
-#endif
-}
-
-static double comm_time(void)
-{
-#ifdef HAVE_MPI
-  return MPI_Wtime();
-#else
-  return 0;
-#endif
-}
-
-static void comm_barrier(const struct comm *c)
-{
-#ifdef HAVE_MPI
-  MPI_Barrier(c->c);
-#elif defined(__UPC__)
-  upc_barrier;
-#endif
-}
-
 static void comm_recv(const struct comm *c, void *p, size_t n,
                       uint src, int tag)
 {
-#ifdef HAVE_MPI
+#ifdef MPI
 # ifndef MPI_STATUS_IGNORE
   MPI_Status stat;
   MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,c->c,&stat);
@@ -303,7 +214,7 @@ static void comm_recv(const struct comm *c, void *p, size_t n,
 static void comm_send(const struct comm *c, void *p, size_t n,
                       uint dst, int tag)
 {
-#ifdef HAVE_MPI
+#ifdef MPI
   MPI_Send(p,n,MPI_UNSIGNED_CHAR,dst,tag,c->c);
 #endif
 }
@@ -311,7 +222,7 @@ static void comm_send(const struct comm *c, void *p, size_t n,
 static void comm_irecv(comm_req *req, const struct comm *c,
                        void *p, size_t n, uint src, int tag)
 {
-#ifdef HAVE_MPI
+#ifdef MPI
   MPI_Irecv(p,n,MPI_UNSIGNED_CHAR,src,tag,c->c,req);
 #endif
 }
@@ -319,14 +230,14 @@ static void comm_irecv(comm_req *req, const struct comm *c,
 static void comm_isend(comm_req *req, const struct comm *c,
                        void *p, size_t n, uint dst, int tag)
 {
-#ifdef HAVE_MPI
+#ifdef MPI
   MPI_Isend(p,n,MPI_UNSIGNED_CHAR,dst,tag,c->c,req);
 #endif
 }
 
 static void comm_wait(comm_req *req, int n)
 {
-#ifdef HAVE_MPI
+#ifdef MPI
 # ifndef MPI_STATUSES_IGNORE
   MPI_Status status[8];
   while(n>=8) MPI_Waitall(8,req,status), req+=8, n-=8;
@@ -337,14 +248,7 @@ static void comm_wait(comm_req *req, int n)
 #elif (defined __UPC__ && defined __UPC_NB__)
   int m;
   m = 0;
-  while(m<=n) upc_sync(req[m]), m--; /* Replace with upc_sync_attempt */
-#endif
-}
-
-static void comm_bcast(const struct comm *c, void *p, size_t n, uint root)
-{
-#ifdef HAVE_MPI
-  MPI_Bcast(p,n,MPI_UNSIGNED_CHAR,root,c->c);
+  while(m<=n) upc_sync(req[m]), m++; /* Replace with upc_sync_attempt */
 #endif
 }
 
