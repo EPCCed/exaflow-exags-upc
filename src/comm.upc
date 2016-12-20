@@ -132,8 +132,10 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->buf_dir = NULL;
     cpd->buf = NULL;
     cpd->flgs = NULL;
-    comm_alloc(cpd,cp->buf_len);
-    upc_memcpy(cpd->buf_dir[cpd->id], cp->buf_dir[cp->id], cpd->buf_len);
+    if (cp->buf_len > 0) {
+      comm_alloc(cpd,cp->buf_len);
+      upc_memcpy(cpd->buf_dir[cpd->id], cp->buf_dir[cp->id], cpd->buf_len);
+    }
 #endif
 
     *cpp = cpd;
@@ -266,24 +268,29 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
 #ifdef MPI
   MPI_Bcast(p,n,MPI_BYTE,root,cp->h);
 #elif __UPC__
-  shared char *src;
-  shared char *dst;
-
-  dst = upc_all_alloc(cp->np, n*sizeof(char));
+  n = n*sizeof(char);
   
-  if (root == cp->id) {
-    src = upc_alloc(n*sizeof(char));
-
+  shared char *dst = upc_all_alloc(cp->np, n);
+  
+  if (root == cp->id) {    
 #if defined(__UPC_CASTABLE__)
-    char *csrc = (char *) upc_cast(src);
+    char *csrc = (char *) upc_cast(dst + root*n);
 #else
-    char *csrc = (char *) src;
+    char *csrc = (char *) (dst + root*n);
 #endif
-
     memcpy(csrc, p, n);
   }
-  
-  upc_all_broadcast(dst, src, n*sizeof(char), UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
+
+  upc_all_broadcast(dst, &dst[root*n], n, UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
+
+  if (root != cp->id) {
+#if defined(__UPC_CASTABLE__)
+    char *cdst = (char *) upc_cast(dst);
+#else
+    char *cdst = (char *) dst;
+#endif
+    memcpy(p, cdst, n);
+  }
 #endif
 }
 
