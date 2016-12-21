@@ -271,7 +271,7 @@ START_TEST(test_allreduce) {
 START_TEST(test_scan) {
   struct comm c;
   comm_ext ce;
-  ulong sum[2],r[2],v,check_v;
+  int scan[2],buf[2],v,check_v;
   int rank, size;
 #ifdef HAVE_MPI
   ce = MPI_COMM_WORLD;    
@@ -290,9 +290,8 @@ START_TEST(test_scan) {
   comm_init(&c, ce);
 
   v = c.id + 1;
-  comm_scan(sum, &c, gs_slong, gs_add, &v, 1, r);
-  fail_unless(sum[0] == (rank * (rank + 1)>>1));
-  fail_unless(sum[1] == (size * (size + 1)>>1));
+  comm_scan(scan, &c, gs_int, gs_add, &v, 1, buf);
+  fail_unless(scan[0] == (rank * (rank + 1)>>1));
 
   comm_free(&c);
 } END_TEST
@@ -355,9 +354,9 @@ Suite *comm_suite() {
   tcase_add_test(tc, test_allreduce);
   suite_add_tcase(s, tc);
 
-  //  tc = tcase_create("comm_scan");
-  //  tcase_add_test(tc, test_scan);
-  //  suite_add_tcase(s, tc);
+  tc = tcase_create("comm_scan");
+  tcase_add_test(tc, test_scan);
+  suite_add_tcase(s, tc);
 
   tc = tcase_create("comm_dot");
   tcase_add_test(tc, test_dot);

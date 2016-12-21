@@ -102,7 +102,40 @@ static void allreduce_imp(const struct comm *com, gs_dom dom, gs_op op,
 void comm_scan(void *scan, const struct comm *com, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer)
 {
+#ifdef HAVE_MPI
   scan_imp(scan, com,dom,op, v,vn, buffer);
+#elif __UPC__
+  int d;
+  uint D;
+  size_t vsize = vn*gs_dom_size[dom]; 
+  upc_barrier;
+
+  memset(scan, 0, 2 * vsize);
+  comm_alloc(com, vn*gs_dom_size[dom]); 
+  memcpy(buffer,v, vn*gs_dom_size[dom]);
+    
+  com->flgs[MYTHREAD] = -1;    
+  D = ceil(log2(THREADS));
+  upc_barrier;
+
+  for (d = 0; d < D; d++) {
+    
+
+    if ((MYTHREAD + (1<<d)) < THREADS) {
+      while(com->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
+      upc_memput(com->buf_dir[MYTHREAD+(1<<d)], buffer, vn*gs_dom_size[dom]);
+      com->flgs[MYTHREAD+(1<<d)] = -2;
+    }
+
+    if ((MYTHREAD - (1<<d)) >= 0) {      
+      while(com->flgs[MYTHREAD] != -2) ;    
+      gs_gather_array(scan, com->buf, vn, dom, op);
+      gs_gather_array(buffer, com->buf, vn, dom, op);
+    }
+    com->flgs[MYTHREAD] = d;
+  }
+  
+#endif
 }
 
 void comm_allreduce(const struct comm *com, gs_dom dom, gs_op op,
