@@ -292,7 +292,7 @@ START_TEST(test_scan) {
   v = c.id + 1;
   comm_scan(scan, &c, gs_int, gs_add, &v, 1, buf);
   fail_unless(scan[0] == (rank * (rank + 1)>>1));
-
+  fail_unless(scan[1] == (size * (size + 1)>>1));
   comm_free(&c);
 } END_TEST
 

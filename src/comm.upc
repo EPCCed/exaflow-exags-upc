@@ -108,6 +108,7 @@ void comm_scan(void *scan, const struct comm *com, gs_dom dom, gs_op op,
   int d;
   uint D;
   size_t vsize = vn*gs_dom_size[dom]; 
+  void *red = (char *)scan + vsize;
   upc_barrier;
 
   memset(scan, 0, 2 * vsize);
@@ -119,7 +120,6 @@ void comm_scan(void *scan, const struct comm *com, gs_dom dom, gs_op op,
   upc_barrier;
 
   for (d = 0; d < D; d++) {
-    
 
     if ((MYTHREAD + (1<<d)) < THREADS) {
       while(com->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
@@ -135,6 +135,8 @@ void comm_scan(void *scan, const struct comm *com, gs_dom dom, gs_op op,
     com->flgs[MYTHREAD] = d;
   }
   
+  upc_barrier;
+  comm_allreduce(com, dom, op, v, vn, red);  
 #endif
 }
 
