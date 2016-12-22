@@ -111,6 +111,8 @@ typedef int comm_req;
 
 #define comm_barrier   PREFIXED_NAME(comm_barrier  )
 #define comm_bcast     PREFIXED_NAME(comm_bcast    )
+#define comm_send      PREFIXED_NAME(comm_send     )
+#define comm_recv      PREFIXED_NAME(comm_recv     )
 
 #define comm_allreduce_cdom PREFIXED_NAME(comm_allreduce_cdom)
 #define comm_allreduce PREFIXED_NAME(comm_allreduce)
@@ -135,6 +137,15 @@ struct comm {
 #endif
 };
 
+struct message {
+  uint src;
+  int tag;
+  size_t len;
+  void *data;
+  struct message *next;
+};
+
+
 void comm_init(void);
 void comm_finalize(void);
 
@@ -155,6 +166,8 @@ void comm_time(double *tm);
 void comm_barrier(const comm_ptr cp);
 void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root);
 
+void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag);
+void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag);
 
 #ifdef GS_DEFS_H
 void comm_allreduce_cdom(const comm_ptr cp, comm_type cdom, gs_op op,
@@ -186,27 +199,6 @@ GS_FOR_EACH_DOMAIN(DEFINE_REDUCE)
 /*----------------------------------------------------------------------------
   Code for static (inline) functions
   ----------------------------------------------------------------------------*/
-
-static void comm_recv(const comm_ptr cp, void *p, size_t n,
-                      uint src, int tag)
-{
-#ifdef MPI
-# ifndef MPI_STATUS_IGNORE
-  MPI_Status stat;
-  MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,&stat);
-# else  
-  MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,MPI_STATUS_IGNORE);
-# endif
-#endif
-}
-
-static void comm_send(const comm_ptr cp, void *p, size_t n,
-                      uint dst, int tag)
-{
-#ifdef MPI
-  MPI_Send(p,n,MPI_UNSIGNED_CHAR,dst,tag,cp->h);
-#endif
-}
 
 static void comm_irecv(comm_req *req, const comm_ptr cp,
                        void *p, size_t n, uint src, int tag)

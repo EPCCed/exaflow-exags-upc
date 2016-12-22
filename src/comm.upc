@@ -14,11 +14,21 @@
 #include "gs_local.h"
 #include "comm.h"
 
+static struct message *shared msg_queue[THREADS];
+static upc_lock_t *shared msg_queue_lock[THREADS];
 
 void comm_init()
 {
 #ifdef MPI
   MPI_Init(0,0);
+#elifdef __UPC__
+
+  upc_forall (int i=0; i<THREADS; i++; i) {
+    msg_queue[i] = NULL;
+    msg_queue_lock[i] = NULL;
+    msg_queue_lock[i] = upc_global_lock_alloc();
+  }
+  
 #endif
 }
 
@@ -26,6 +36,19 @@ void comm_finalize()
 {
 #ifdef MPI
   MPI_Finalize();
+#elifdef __UPC__
+
+  upc_forall (int i=0; i<THREADS; i++; i) {
+
+    upc_lock(msg_queue_lock[i]);
+    //todo: msg_queue[i];
+    msg_queue[i] = NULL;
+    upc_unlock(msg_queue_lock[i]);
+    
+    upc_global_lock_free(msg_queue_lock[i]);
+    msg_queue_lock[i] = NULL;
+  }
+  
 #endif
 }
 
@@ -271,6 +294,7 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
   n = n*sizeof(char);
   
   shared char *dst = upc_all_alloc(cp->np, n);
+  if (NULL == dst) return;
   
   if (root == cp->id) {    
 #if defined(__UPC_CASTABLE__)
@@ -291,10 +315,97 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
 #endif
     memcpy(p, cdst, n);
   }
+
+  upc_all_free(dst);
 #endif
 }
 
 
+
+void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag)
+{
+#ifdef MPI
+  MPI_Send(p,n,MPI_UNSIGNED_CHAR,dst,tag,cp->h);
+#elif __UPC__ 
+
+  struct message *msg = (struct message*) upc_alloc(sizeof(struct message));
+
+  if (NULL == msg) return;
+
+  msg->src = MYTHREAD;
+  msg->tag = tag;
+  msg->len = n;
+  msg->data = (void*) upc_alloc(n);
+  memcpy(msg->data, p, n);
+  msg->next = NULL;
+
+  upc_lock(msg_queue_lock[dst]);
+
+  struct message *queue = msg_queue[dst];
+
+  if (NULL != queue) {
+    while (NULL != queue->next) {
+      queue = queue->next;
+    }
+    queue->next = msg;
+  }
+  else {
+    msg_queue[dst] = msg;
+  } 
+  
+  upc_unlock(msg_queue_lock[dst]);
+  
+#endif
+}
+
+
+void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
+{
+#ifdef MPI
+# ifndef MPI_STATUS_IGNORE
+  MPI_Status stat;
+  MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,&stat);
+# else  
+  MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,MPI_STATUS_IGNORE);
+# endif
+#elif __UPC__
+
+  upc_lock(msg_queue_lock[MYTHREAD]);
+
+  struct message *msg = msg_queue[MYTHREAD];
+  struct message *prev_msg = NULL;
+  int recvd = 0;
+  while (NULL != msg && 0 == recvd) {
+    if (src == msg->src &&
+        tag == msg->tag &&
+	  n == msg->len) {
+	  
+        memcpy(p, msg->data, n);
+	recvd = 1;
+	
+    }
+    else {
+      prev_msg = msg;
+      msg = msg->next;
+    }
+  }
+
+  if (0 != recvd) {
+    if (NULL != prev_msg) {
+      prev_msg->next = msg->next;
+    }
+    else {
+      msg_queue[MYTHREAD] = NULL;
+    }
+
+    free(msg->data);
+    free(msg);
+  }
+  
+  upc_unlock(msg_queue_lock[MYTHREAD]);  
+  
+#endif
+}
 
 
 uint comm_gbl_id=0, comm_gbl_np=1;
@@ -456,8 +567,64 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
     memcpy(v,buf,vn*gs_dom_size[dom]);
     return;
   }
+  
 #elif __UPC__
-  {
+  /*
+  upc_type_t ucp_type = UPC_CHAR;
+  switch (dom) {
+    case gs_double:
+      ucp_type = UPC_DOUBLE;
+      break;
+    case gs_float:
+      ucp_type = UPC_FLOAT;
+      break;
+    case gs_int:
+      ucp_type = UPC_INT;
+      break;
+    case gs_long:
+      ucp_type = UPC_LONG;
+      break;
+    case gs_long_long:
+      ucp_type = UPC_LLONG;
+      break;
+    default: printf("Warning, comm_allreduce defaulting to %d.\n", ucp_type);
+  }
+		  
+  upc_op_t upc_op = UPC_ADD;
+  switch (op) {
+    case gs_mul:
+      upc_op = UPC_MULT;
+      break;
+    case gs_min:
+      upc_op = UPC_MIN;
+      break;
+    case gs_max:
+      upc_op = UPC_MAX;
+      break;
+    default: printf("Warning, comm_allreduce defaulting to %d.\n", upc_op);
+  }
+
+
+  switch (ucp_type) {
+    case UPC_DOUBLE:
+      ucp_type = UPC_DOUBLE;
+      break;
+    case UPC_FLOAT:
+      ucp_type = UPC_FLOAT;
+      break;
+    case UPC_INT:
+      ucp_type = UPC_INT;
+      break;
+    case UPC_LONG:
+      ucp_type = UPC_LONG;
+      break;
+    case UPC_LLONG:
+      ucp_type = UPC_LLONG;
+      break;
+    default: printf("Warning, comm_allreduce defaulting to %d.\n", ucp_type);
+  }
+  */
+  {    
     int np = cp->np, id = cp->id;
     uint D, d, i;
     
