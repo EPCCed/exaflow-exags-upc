@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "c99.h"
@@ -1099,12 +1100,11 @@ static void gs_setup_aux(struct gs_data *gsh, const slong *id, uint n,
 
   struct gs_topology top;
   struct crystal cr;
-  
-  crystal_init(&cr,gsh->comm);
 
+  crystal_init(&cr,gsh->comm);
+  
   get_topology(&top, id,n, &cr);
   if(unique) make_topology_unique(&top,0,gsh->comm->id,&cr.data);
-
   gsh->handle_size = sizeof(struct gs_data);
   gsh->handle_size += local_setup(gsh,&top.nz);
 
@@ -1138,9 +1138,7 @@ struct gs_data *gs_setup(const slong *id, uint n, const comm_ptr comm,
                          int unique, gs_method method, int verbose)
 {
   struct gs_data *gsh = tmalloc(struct gs_data,1);
-
   comm_dup(&(gsh->comm), comm);
-
   gs_setup_aux(gsh,id,n,unique,method,verbose);
   return gsh;
 }
@@ -1202,10 +1200,9 @@ void fgs_setup(sint *handle, const slong id[], const sint *n,
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-
   comm_dup(&(gsh->comm),*comm);
-  
-  gs_setup_aux(gsh,id,*n,0,gs_auto,1);
+  //gs_setup_aux(gsh,id,*n,0,gs_auto,1);
+  gs_setup_aux(gsh,id,*n,0,gs_all_reduce,1);
   *handle = fgs_n++;
 }
 
