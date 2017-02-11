@@ -67,6 +67,7 @@ typedef MPI_Comm comm_ext;
 typedef MPI_Request comm_req;
 typedef MPI_Op comm_cop;
 #elif __UPC__
+#include <sys/time.h>
 #include <upc.h>
 #include <upc_collective.h>
 #ifdef __UPC_NB__
@@ -166,7 +167,7 @@ static void comm_init(struct comm *c, comm_ext ce)
   MPI_Comm_rank(c->c,&i), comm_gbl_id=c->id=i;
   MPI_Comm_size(c->c,&i), comm_gbl_np=c->np=i;
 #elif __UPC__
-  c->id = MYTHREAD, c->np = THREADS;  
+  comm_gbl_id=c->id = MYTHREAD, comm_gbl_np=c->np = THREADS;
   c->buf_len = 0;
   c->buf_dir = NULL;
   c->buf = NULL;
@@ -201,6 +202,17 @@ static void comm_dup_(struct comm *d, const struct comm *s,
   d->id = s->id, d->np = s->np;
 #ifdef HAVE_MPI
   MPI_Comm_dup(s->c,&d->c);
+#elif __UPC__
+  d->buf_len = 0;
+  d->buf_dir = NULL;
+  d->buf = NULL;
+  d->flgs = NULL;
+  /*
+  d->buf_len = d->buf_len;
+  d->buf_dir = d->buf_dir;
+  d->buf = d->buf;
+  d->flgs = d->flgs;
+  */
 #else
   if(s->np!=1) fail(1,file,line,"%s not compiled with -DMPI\n",file);
 #endif
@@ -273,6 +285,10 @@ static double comm_time(void)
 {
 #ifdef HAVE_MPI
   return MPI_Wtime();
+#elif __UPC__
+  struct timeval tv;
+  gettimeofday(&tv,NULL);
+  return tv.tv_sec + 1e-6*tv.tv_usec;
 #else
   return 0;
 #endif
