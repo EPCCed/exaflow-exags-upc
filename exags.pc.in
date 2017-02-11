@@ -3,7 +3,7 @@ exec_prefix=@exec_prefix@
 libdir=${exec_prefix}/lib
 includedir=${prefix}/include
 includedir_pkg=${prefix}/include/exags
-compiler=@CC@
+compiler=@UPC@
 
 Name: ExaGS
 Version: @PACKAGE_VERSION@
