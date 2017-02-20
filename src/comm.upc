@@ -14,15 +14,23 @@
 #include "gs_local.h"
 #include "comm.h"
 
+// Global declarations
+// Each element in msg_queue is a pointer to a struct message
+// msg_queue[i]->next points to the next msg in a linked list.
 static struct message *shared msg_queue[THREADS];
+
+// An array of locks to allow for atomic updates of the message queues
 static upc_lock_t *shared msg_queue_lock[THREADS];
 
+// Initialise Comms methods
 void comm_init()
 {
 #ifdef MPI
   MPI_Init(0,0);
 #elifdef __UPC__
 
+  // Initialise the message queue and lock per thread.
+  // OPT: msg_queue[MYTHREAD] = blah ... upc_barrier() would do the same sans loop.
   upc_forall (int i=0; i<THREADS; i++; i) {
     msg_queue[i] = NULL;
     msg_queue_lock[i] = NULL;
@@ -32,6 +40,8 @@ void comm_init()
 #endif
 }
 
+// Tear down the msg queues and associated locks.
+// Note, does not iterate through the msg_queue to verify that *msg_queue[i]->next is NULL
 void comm_finalize()
 {
 #ifdef MPI
@@ -53,6 +63,8 @@ void comm_finalize()
 }
 
 
+// Allocate memory for the comms
+// Take in a pointer to a communicator (comm_ptr is: struct comm*)
 #ifdef __UPC__
 static int comm_alloc(comm_ptr cp, size_t n) 
 {
@@ -60,6 +72,8 @@ static int comm_alloc(comm_ptr cp, size_t n)
   int np = cp->np;
   shared[] char *tmp;
 
+
+  // Sanitise inputs based on what's in cp's members
   if (n <= 0) {
     return 0;
   }
@@ -68,32 +82,44 @@ static int comm_alloc(comm_ptr cp, size_t n)
     return 0;
   }
 
+  // If flgs is empty, allocate np int's in the shared memory region
   if (cp->flgs == NULL) {
     cp->flgs = upc_all_alloc(np, sizeof(int));
   }
 
+  // If buf_dir is empty, allocate space for np pointers-to-shared-chars
   if (cp->buf_dir == NULL) {
     cp->buf_dir = upc_all_alloc(np, sizeof(shared[] char *shared));
   }
-  
+
+  // If buf_dir is NOT empty, tmp (a pointer to a shared char) is pointed at the id'th element in buf_dir
   if (cp->buf != NULL) {
     tmp = (shared[] char *) cp->buf_dir[id];
   }
-  
+
+  // Alloc up n BYTES for a buffer and stash the pointer to it at buf_dir[id]
 #if defined(__GUPC__) || defined(__clang_upc__)
   cp->buf_dir[id] = upc_alloc(n);
 #else
   cp->buf_dir[id] = (shared[] char *shared) upc_alloc(n);
 #endif
   upc_barrier;
-  
+
+  // If buf_len isn't 0, ie, something was already present in buf_dir[id], then
+  // copy from tmp to buf_dir[id] the bytes.
+  // This is actually totally wrong as we never copied the CONTENTS to tmp, or ever allocated it space
+  // That free looks like a bad idea too, as it doesn't have a matching alloc
+  // It needs a trap.
   if (cp->buf_len != 0) {
     upc_memcpy(cp->buf_dir[id], tmp, cp->buf_len);
     upc_free(tmp);
   }
-  
+
+  // Make buf_len store the size of buffer allocated at each element of buf_dir
   cp->buf_len = n;
-  
+
+  // Pretend that the locally affine buffers are just chars...
+  // This is a shared->private cast which loses the affinity and phase.
 #if defined(__UPC_CASTABLE__)
   cp->buf = (char *) upc_cast(&cp->buf_dir[id][0]);
 #else
@@ -105,6 +131,8 @@ static int comm_alloc(comm_ptr cp, size_t n)
 #endif
 
 
+// Manufacture a UPC equivalent of comm_world if UPC
+// Make our communicator (cpp) understand comm_world if MPI
 void comm_world(comm_ptr *cpp)
 {
   if (NULL == cpp) return;
@@ -112,6 +140,8 @@ void comm_world(comm_ptr *cpp)
   comm_ptr cp = (comm_ptr) calloc(sizeof (struct comm), 0);
   
   if (NULL != cp) {
+    // manual says: MPI_Comm_rank fills 2nd arg with the rank of *this* process in the 1st arg
+    // ie, what rank am I
 #ifdef MPI
     cp->h = MPI_COMM_WORLD;
     MPI_Comm_size(cp->h,&(cp->np));
@@ -134,6 +164,7 @@ void comm_world(comm_ptr *cpp)
   }
 }
 
+// Duplicate a communicator
 void comm_dup(comm_ptr *cpp, const comm_ptr cp)
 {
   if (NULL == cpp || NULL == cp) return;
@@ -165,6 +196,7 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
   }
 }
 
+// Free off a communicator
 void comm_free(comm_ptr *cpp)
 {
   if (NULL == cpp) return;
@@ -194,7 +226,7 @@ void comm_free(comm_ptr *cpp)
   }
 }
 
-
+// Access function for np
 void comm_np(const comm_ptr cp, int *np)
 {
   if (NULL != cp && NULL != np) {
@@ -202,6 +234,7 @@ void comm_np(const comm_ptr cp, int *np)
   }
 }
 
+// Access function for id
 void comm_id(const comm_ptr cp, int *id)
 {
   if (NULL != cp && NULL != id) {
@@ -209,7 +242,7 @@ void comm_id(const comm_ptr cp, int *id)
   }
 }
 
-
+// Helper function to get the correct type information for the comms lib for int
 void comm_type_int(comm_type *ct)
 {
 #ifdef MPI
@@ -219,6 +252,7 @@ void comm_type_int(comm_type *ct)
 #endif
 }
 
+// Helper function to get the correct type information for the comms lib for int8
 void comm_type_int8(comm_type *ct)
 {
   if (NULL == ct) return;
@@ -229,6 +263,7 @@ void comm_type_int8(comm_type *ct)
 #endif
 }
 
+// Helper function to get the correct type information for the comms lib for real
 void comm_type_real(comm_type *ct)
 {
   if (NULL == ct) return;
@@ -239,6 +274,7 @@ void comm_type_real(comm_type *ct)
 #endif
 }
 
+// Helper function to get the correct type information for the comms lib for dp
 void comm_type_dp(comm_type *ct)
 {
   if (NULL == ct) return;
@@ -249,6 +285,7 @@ void comm_type_dp(comm_type *ct)
 #endif
 }
 
+// Helper function to get the correct tag information from the comms lib for UB, MPI ONLY
 void comm_tag_ub(const comm_ptr cp, int *ub)
 {
   if (NULL == cp || NULL == ub) return;
@@ -262,6 +299,7 @@ void comm_tag_ub(const comm_ptr cp, int *ub)
 }
 
 
+// Helper function to get the time for timing routines.
 void comm_time(double *tm)
 {
   if (NULL == tm) return;
@@ -274,6 +312,7 @@ void comm_time(double *tm)
 #endif
 }
 
+// Helper function for a comms barrier
 void comm_barrier(const comm_ptr cp)
 {
   if (NULL == cp) return;
@@ -284,6 +323,7 @@ void comm_barrier(const comm_ptr cp)
 #endif
 }
 
+// Broadcast n BYTES from root to other processes
 void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
 {
   if (NULL == cp || NULL == p) return;
@@ -292,10 +332,13 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
   MPI_Bcast(p,n,MPI_BYTE,root,cp->h);
 #elif __UPC__
   n = n*sizeof(char);
-  
+
+  // Make a temporary space of size np*n (bytes)
   shared char *dst = upc_all_alloc(cp->np, n);
   if (NULL == dst) return;
-  
+
+  // If this process is root, cast csrc as char*, local affinity shuffle trick
+  // THEN you can just memcpy from src to dst
   if (root == cp->id) {    
 #if defined(__UPC_CASTABLE__)
     char *csrc = (char *) upc_cast(dst + root*n);
@@ -305,6 +348,7 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
     memcpy(csrc, p, n);
   }
 
+  // Do the UPC boradcast where we make dst (on all threads, equal to the n bytes starting from dst[root*n]
   upc_all_broadcast(dst, &dst[root*n], n, UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
 
   if (root != cp->id) {
@@ -321,17 +365,20 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
 }
 
 
-
+// Implementation of comm_send for UPC
+// This seems whack, doing a send/recv using a single sided model...
 void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag)
 {
 #ifdef MPI
   MPI_Send(p,n,MPI_UNSIGNED_CHAR,dst,tag,cp->h);
 #elif __UPC__ 
 
+  // Make space for a message, locally affine but in shared space, not collective
   struct message *msg = (struct message*) upc_alloc(sizeof(struct message));
 
   if (NULL == msg) return;
 
+  // Fill in the message structure, to mimic what would be contained in an MPI message
   msg->src = MYTHREAD;
   msg->tag = tag;
   msg->len = n;
@@ -339,6 +386,7 @@ void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag)
   memcpy(msg->data, p, n);
   msg->next = NULL;
 
+  // Then just stuff the message at the next point in the queue of the receiving process
   upc_lock(msg_queue_lock[dst]);
 
   struct message *queue = msg_queue[dst];
@@ -358,7 +406,7 @@ void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag)
 #endif
 }
 
-
+// Implementation of MPI_Recv in UPC...
 void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
 {
 #ifdef MPI
@@ -372,10 +420,14 @@ void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
 
   upc_lock(msg_queue_lock[MYTHREAD]);
 
+  // Get a quick pointer to OUR queue
+  // Start reading messages
   struct message *msg = msg_queue[MYTHREAD];
   struct message *prev_msg = NULL;
   int recvd = 0;
+  // Whilst there is at least one message
   while (NULL != msg && 0 == recvd) {
+    // If the source, length and tag match what we expect, copy from msg->data to p
     if (src == msg->src &&
         tag == msg->tag &&
 	  n == msg->len) {
@@ -385,11 +437,14 @@ void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
 	
     }
     else {
+      // Otherwise, advance through to the next message in OUR queue
       prev_msg = msg;
       msg = msg->next;
     }
   }
 
+  // Do a linked list removal, or mark emptied queue if necessary
+  // Do housekeeping on messages.
   if (0 != recvd) {
     if (NULL != prev_msg) {
       prev_msg->next = msg->next;
@@ -410,14 +465,19 @@ void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
 
 uint comm_gbl_id=0, comm_gbl_np=1;
 
+
+// Init the GATHER SCATTER code.
 GS_DEFINE_IDENTITIES()
 GS_DEFINE_DOM_SIZES()
 
+// Implementation of SCAN
 static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                      const void *v, uint vn, void *buffer)
 {
+  // If comms handle invalid, quit
   if (NULL == cp) return;
-  
+
+  // We should be clear about exactly which implementation of SCAN this is.
   comm_req req[2];
   size_t vsize = vn*gs_dom_size[dom];
   const uint id=cp->id, np=cp->np;
@@ -462,7 +522,7 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
   }
 }
 
-
+// Allreduce
 static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
                           void *v, uint vn, void *buf)
 {
@@ -499,12 +559,14 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
   }
 }
 
+// Helper function to call scan on a communicator
 void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer)
 {
   scan_imp(scan, cp,dom,op, v,vn, buffer);
 }
 
+// Helper function to call allreduce on a communicator with a TYPE
 void comm_allreduce_cdom(const comm_ptr cp, comm_type cdom, gs_op op,
                          void *v, uint vn, void *buf)
 {
@@ -537,6 +599,8 @@ void comm_allreduce_cdom(const comm_ptr cp, comm_type cdom, gs_op op,
   }
 }
 
+
+// Implementation of allreduce, once the type has been been deduced.
 void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
                     void *v, uint vn, void *buf)
 {
@@ -627,13 +691,16 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
   {    
     int np = cp->np, id = cp->id;
     uint D, d, i;
-    
+
+    // Copy v into buf, assume buf can hold vn*gs_dom_size[dom] bytes
     memcpy(buf,v,vn*gs_dom_size[dom]);
 
     if (np == 1) return;
 
+    // Make a communicator for this operation, each entry in cp->buf_dir should hold vn*gs_dom_size[dom] bytes
     comm_alloc(cp, vn*gs_dom_size[dom]); /* Fixme const comm... */
 
+    // Do flags
     cp->flgs[id] = -10;
     D = floor(log2(np));
     upc_barrier;
@@ -686,6 +753,8 @@ comm_allreduce_byhand:
 #endif
 }
 
+// Helper to call comm_allreduce with value of tensor_dot
+// TODO: What do this do, investigate
 double comm_dot(const comm_ptr cp, double *v, double *w, uint n)
 {
   double s=tensor_dot(v,w,n),b;
