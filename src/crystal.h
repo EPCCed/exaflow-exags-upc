@@ -13,7 +13,7 @@ struct crystal {
   struct comm comm;
   buffer data, work;
 #ifdef __UPC__
-  shared strict uint *size;
+  shared strict uint volatile *size;
 #endif
 };
 

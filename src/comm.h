@@ -105,7 +105,7 @@ struct comm {
   comm_ext c;
 #ifdef __UPC__
   shared[] char *shared *buf_dir; /* Global directory of buffers */
-  shared strict int *flgs;
+  shared strict int volatile *flgs;
   char *buf;			  /* Local part of buffers */
   size_t buf_len;		  /* Shared buffer size */
 #endif
