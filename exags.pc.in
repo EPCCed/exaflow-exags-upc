@@ -10,4 +10,4 @@ Version: @PACKAGE_VERSION@
 Description:
 Requires: 
 Libs: -L${libdir} -lexags @LDFLAGS@ @LIBS@
-Cflags: @CFLAGS@ -I${includedir} -I${includedir_pkg}
+Cflags: @CFLAGS@ @UPCFLAGS@ -I${includedir} -I${includedir_pkg}
