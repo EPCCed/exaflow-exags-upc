@@ -12,6 +12,9 @@
 struct crystal {
   comm_ptr comm;
   buffer data, work;
+#ifdef __UPC__
+  shared strict uint *size;
+#endif
 };
 
 void crystal_init(struct crystal *cr, const comm_ptr comm);
