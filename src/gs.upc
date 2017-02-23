@@ -1251,13 +1251,13 @@ static int fgs_max = 0;
 static int fgs_n = 0;
 
 void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
-                    const MPI_Fint *comm, const sint *np, const sint *method)
+                    const comm_ptr *comm, const sint *np, const sint *method)
 {
   struct gs_data *gsh;
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-  comm_init_check(&gsh->comm,*comm,*np);
+  comm_init_check(gsh->comm,*comm,*np);
   gs_setup_aux(gsh,id,*n,0,*method,1);
   *handle = fgs_n++;
 }

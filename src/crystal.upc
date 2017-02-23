@@ -56,7 +56,7 @@ void crystal_init(struct crystal *cr, const comm_ptr comm)
 #ifdef HAVE_MPI
 
 #elif __UPC__
-  comm_alloc(&cr->comm, 1000 * sizeof(uint));
+  comm_alloc(cr->comm, 1000 * sizeof(uint));
   cr->size = upc_all_alloc(THREADS, sizeof(uint));
 #endif
 }
@@ -71,7 +71,7 @@ void crystal_free(struct crystal *cr)
 
 #elif __UPC__
   if (MYTHREAD == 0)
-    upc_free(&cr->size);
+    upc_free(cr->size);
 #endif
 }
 
@@ -90,8 +90,8 @@ static uint crystal_move(struct crystal *cr, uint cutoff, int send_hi)
 #ifdef HAVE_MPI
   send = buffer_reserve(&cr->work,n*sizeof(uint));
 #elif __UPC__
-  comm_alloc(&(cr->comm), n * sizeof(uint));
-  send = p->comm.buf;
+  comm_alloc(cr->comm, n * sizeof(uint));
+  send = (unsigned int*) cr->comm->buf;
 #endif
 
   while(&cr->size[MYTHREAD] > 0) ;
@@ -113,8 +113,8 @@ static uint crystal_move(struct crystal *cr, uint cutoff, int send_hi)
 #ifdef HAVE_MPI
   return      send - (uint*)cr->work.ptr;
 #elif __UPC__
-  cr->size[MYTHREAD] = send - (uint*)cr->comm.buf;
-  return      send - (uint*)cr->comm.buf;
+  cr->size[MYTHREAD] = send - (uint*)cr->comm->buf;
+  return      send - (uint*)cr->comm->buf;
 #endif
 
 }
@@ -137,7 +137,7 @@ static void crystal_exchange(struct crystal *cr, uint send_n, uint targ,
 
   if (recvn) count[0] = cr->size[targ];
 
-  if (recvn == 2) count[1] = cr->size[p->comm.id - 1];
+  if (recvn == 2) count[1] = cr->size[cr->comm->id - 1];
 
 #endif
   sum = cr->data.n + count[0] + count[1];
@@ -154,11 +154,11 @@ static void crystal_exchange(struct crystal *cr, uint send_n, uint targ,
   comm_wait(req,recvn+1);
 #elif __UPC__
   if (recvn)
-    upc_memget(recv[0], cr->comm.buf_dir[targ], count[0] * sizeof(uint));
+    upc_memget(recv[0], cr->comm->buf_dir[targ], count[0] * sizeof(uint));
   if (recvn == 2)
-    upc_memget(recv[1], cr->comm.buf_dir[cr->comm.id-1], count[1] * sizeof(uint));
+    upc_memget(recv[1], cr->comm->buf_dir[cr->comm->id-1], count[1] * sizeof(uint));
   if (recvn) cr->size[targ] = 0;
-  if (recvn==2) cr->sizecr->comm.id - 1] = 0;
+  if (recvn==2) cr->size[cr->comm->id - 1] = 0;
  #endif
 }
 
@@ -169,7 +169,7 @@ void crystal_router(struct crystal *cr)
   uint send_n, targ, tag = 0;
   int send_hi, recvn;
 
-  cr->comm.flgs[MYTHREAD] = -2;
+  cr->comm->flgs[MYTHREAD] = -2;
   cr->size[MYTHREAD] = 0;
   upc_barrier;
   
@@ -177,19 +177,19 @@ void crystal_router(struct crystal *cr)
     nl = (n+1)/2, bh = bl+nl;
     send_hi = id<bh;
     recvn = 1, targ = n-1-(id-bl)+bl;
-    while(cr->comm.flgs[targ] != (tag - 2)) ;
+    while(cr->comm->flgs[targ] != (tag - 2)) ;
     send_n = crystal_move(cr,bh,send_hi);
     
     if(id==targ) targ=bh, recvn=0;
     if(n&1 && id==bh) recvn=2;
 
-    cr->comm.flgs[targ] = -3;
-    while(cr->comm.flgs[MYTHREAD] != -3) ;
+    cr->comm->flgs[targ] = -3;
+    while(cr->comm->flgs[MYTHREAD] != -3) ;
     crystal_exchange(cr,send_n,targ,recvn,tag);
 
     if(id<bh) n=nl; else n-=nl,bl=bh;
 
-    cr->comm.flgs[MYTHREAD] = tag;
+    cr->comm->flgs[MYTHREAD] = tag;
     tag += 2;
   }
 }

@@ -40,6 +40,24 @@ void comm_init()
 #endif
 }
 
+void comm_init_check_(comm_ptr cp, comm_ptr ce, uint np, const char *file, unsigned line)
+{
+#ifdef HAVE_MPI
+  /* comm_init(c,MPI_Comm_f2c(ce)); */
+  comm_world(cp);
+  if(cp->np != np)
+    fail(1,file,line,"comm_init_check: passed P=%u, "
+                     "but MPI_Comm_size gives P=%u",
+                     (unsigned)np,(unsigned)c->np);
+#else
+  comm_world(&cp);
+  if(np != 1)
+    fail(1,file,line,"comm_init_check: passed P=%u, but not compiled with -DMPI",(unsigned)np);
+#endif
+}
+#define comm_init_check(c,ce,np) comm_init_check_(c,ce,np,__FILE__,__LINE__)
+
+
 // Tear down the msg queues and associated locks.
 // Note, does not iterate through the msg_queue to verify that *msg_queue[i]->next is NULL
 void comm_finalize()
@@ -66,7 +84,7 @@ void comm_finalize()
 // Allocate memory for the comms
 // Take in a pointer to a communicator (comm_ptr is: struct comm*)
 #ifdef __UPC__
-static int comm_alloc(comm_ptr cp, size_t n) 
+int comm_alloc(comm_ptr cp, size_t n)
 {
   int id = cp->id;
   int np = cp->np;

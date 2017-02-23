@@ -147,10 +147,14 @@ struct message {
 
 
 void comm_init(void);
+void comm_init_check(comm_ptr, comm_ptr, uint);
 void comm_finalize(void);
 
 void comm_world(comm_ptr *cpp);
 void comm_dup(comm_ptr *cpp, const comm_ptr cp);
+#ifdef __UPC__
+int comm_alloc(comm_ptr cp, size_t n);
+#endif
 void comm_free(comm_ptr *cpp);
 
 void comm_np(const comm_ptr cp, int *np);
