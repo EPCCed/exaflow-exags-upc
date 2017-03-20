@@ -155,7 +155,7 @@ void comm_world(comm_ptr *cpp)
 {
   if (NULL == cpp) return;
 
-  comm_ptr cp = (comm_ptr) calloc(sizeof (struct comm), 0);
+  comm_ptr cp = (comm_ptr) malloc(sizeof (struct comm));
   
   if (NULL != cp) {
     // manual says: MPI_Comm_rank fills 2nd arg with the rank of *this* process in the 1st arg
@@ -187,7 +187,7 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
 {
   if (NULL == cpp || NULL == cp) return;
 
-  comm_ptr cpd = (comm_ptr) calloc(sizeof (struct comm), 0);
+  comm_ptr cpd = (comm_ptr) malloc(sizeof (struct comm));
 
   if (NULL != cpd) {
 #ifdef MPI
