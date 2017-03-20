@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h> /* for exit */
 #include <string.h> /* memcpy */
-#include <time.h>
+#include <sys/time.h>
 #include <math.h>
 #include <limits.h> /* for gs identities */
 #include <float.h>  /* for gs identities */
@@ -324,9 +324,9 @@ void comm_time(double *tm)
 #ifdef MPI
   *tm = MPI_Wtime();
 #else
-  time_t timer;
-  time(&timer);
-  *tm = (double) timer; 
+  struct timeval tv;
+  gettimeofday(&tv,NULL);
+  *tm = tv.tv_sec + 1e-6*tv.tv_usec;
 #endif
 }
 
