@@ -121,7 +121,7 @@ int comm_alloc(comm_ptr cp, size_t n)
 #else
   cp->buf_dir[id] = (shared[] char *shared) upc_alloc(n);
 #endif
-  upc_barrier;
+
 
   // If buf_len isn't 0, ie, something was already present in buf_dir[id], then
   // copy from tmp to buf_dir[id] the bytes.
@@ -770,7 +770,8 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
       gs_gather_array(buf, cp->buf, vn, dom, op);
     }
 
-    cp->flgs[id] = -1;    
+    cp->flgs[id] = -1;
+    upc_barrier;
 
     if (id < (1<<D)) {
       for (d = 0; d < D; d++) {
