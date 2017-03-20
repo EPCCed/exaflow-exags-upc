@@ -1257,7 +1257,7 @@ void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-  comm_init_check(gsh->comm,*comm,*np);
+  //  comm_init_check(gsh->comm,*comm,*np);
   gs_setup_aux(gsh,id,*n,0,*method,1);
   *handle = fgs_n++;
 }
