@@ -94,7 +94,7 @@ static uint crystal_move(struct crystal *cr, uint cutoff, int send_hi)
   send = (unsigned int*) cr->comm->buf;
 #endif
 
-  while(&cr->size[MYTHREAD] > 0) ;
+  while(cr->size[MYTHREAD] > 0) ;
 
   if(send_hi) { /* send hi, keep lo */
     for(src=keep,end=keep+n; src<end; src+=len) {
