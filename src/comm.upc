@@ -581,7 +581,43 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
 void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer)
 {
-  scan_imp(scan, cp,dom,op, v,vn, buffer);
+#ifdef HAVE_MPI
+  scan_imp(scan, com,dom,op, v,vn, buffer);
+#elif __UPC__
+  int d;
+  uint D;
+  size_t vsize = vn*gs_dom_size[dom]; 
+  void *red = (char *)scan + vsize;
+  upc_barrier;
+
+  memset(scan, 0, 2 * vsize);
+  comm_alloc(cp, vn*gs_dom_size[dom]); 
+  upc_barrier;
+  memcpy(buffer,v, vn*gs_dom_size[dom]);
+    
+  cp->flgs[MYTHREAD] = -1;    
+  D = ceil(log2(THREADS));
+  upc_barrier;
+
+  for (d = 0; d < D; d++) {
+
+    if ((MYTHREAD + (1<<d)) < THREADS) {
+      while(cp->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
+      upc_memput(cp->buf_dir[MYTHREAD+(1<<d)], buffer, vn*gs_dom_size[dom]);
+      cp->flgs[MYTHREAD+(1<<d)] = -2;
+    }
+
+    if ((MYTHREAD - (1<<d)) >= 0) {      
+      while(cp->flgs[MYTHREAD] != -2) ;    
+      gs_gather_array(scan, cp->buf, vn, dom, op);
+      gs_gather_array(buffer, cp->buf, vn, dom, op);
+    }
+    cp->flgs[MYTHREAD] = d;
+  }
+
+  upc_barrier;
+  comm_allreduce(cp, dom, op, v, vn, red);  
+#endif
 }
 
 // Helper function to call allreduce on a communicator with a TYPE
