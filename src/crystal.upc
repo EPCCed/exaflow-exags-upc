@@ -63,7 +63,9 @@ void crystal_init(struct crystal *cr, const comm_ptr comm)
 
 void crystal_free(struct crystal *cr)
 {
+#ifdef __UPC__
   upc_barrier;
+#endif
   comm_free(&(cr->comm));
   buffer_free(&cr->data);
   buffer_free(&cr->work);
@@ -92,9 +94,9 @@ static uint crystal_move(struct crystal *cr, uint cutoff, int send_hi)
 #elif __UPC__
   comm_alloc(cr->comm, n * sizeof(uint));
   send = (unsigned int*) cr->comm->buf;
-#endif
 
   while(cr->size[MYTHREAD] > 0) ;
+#endif
 
   if(send_hi) { /* send hi, keep lo */
     for(src=keep,end=keep+n; src<end; src+=len) {
@@ -164,6 +166,23 @@ static void crystal_exchange(struct crystal *cr, uint send_n, uint targ,
 
 void crystal_router(struct crystal *cr)
 {
+#ifdef HAVE_MPI
+  uint bl=0, bh, nl;
+  uint id = cr->comm->id, n=cr->comm->np;
+  uint send_n, targ, tag = 0;
+  int send_hi, recvn;
+  while(n>1) {
+    nl = (n+1)/2, bh = bl+nl;
+    send_hi = id<bh;
+    send_n = crystal_move(cr,bh,send_hi);
+    recvn = 1, targ = n-1-(id-bl)+bl;
+    if(id==targ) targ=bh, recvn=0;
+    if(n&1 && id==bh) recvn=2;
+    crystal_exchange(cr,send_n,targ,recvn,tag);
+    if(id<bh) n=nl; else n-=nl,bl=bh;
+    tag += 2;
+  }
+#elif __UPC__
   uint bl=0, bh, nl;
   uint id = cr->comm->id, n=cr->comm->np;
   uint send_n, targ, tag = 0;
@@ -192,6 +211,7 @@ void crystal_router(struct crystal *cr)
     cr->comm->flgs[MYTHREAD] = tag;
     tag += 2;
   }
+#endif
 }
 
 
