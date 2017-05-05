@@ -17,45 +17,35 @@
 // Global declarations
 // Each element in msg_queue is a pointer to a struct message
 // msg_queue[i]->next points to the next msg in a linked list.
+#ifdef __UPC__
 static struct message *shared msg_queue[THREADS];
 
 // An array of locks to allow for atomic updates of the message queues
+
 static upc_lock_t *shared msg_queue_lock[THREADS];
+
+#endif
 
 // Initialise Comms methods
 void comm_init()
 {
+
 #ifdef MPI
   MPI_Init(0,0);
-#elifdef __UPC__
-
-  // Initialise the message queue and lock per thread.
-  // OPT: msg_queue[MYTHREAD] = blah ... upc_barrier() would do the same sans loop.
-  upc_forall (int i=0; i<THREADS; i++; i) {
-    msg_queue[i] = NULL;
-    msg_queue_lock[i] = NULL;
-    msg_queue_lock[i] = upc_global_lock_alloc();
-  }
   
+#elif __UPC__
+
+  // TODO: add back once proper ifdefs are in place
+
+  // Initialise the message queue and lock per thread.  
+  //  msg_queue[MYTHREAD] = NULL;
+  //  msg_queue_lock[MYTHREAD] = upc_global_lock_alloc();
+
+  //  upc_barrier;
+
 #endif
 }
 
-void comm_init_check_(comm_ptr cp, comm_ptr ce, uint np, const char *file, unsigned line)
-{
-#ifdef HAVE_MPI
-  /* comm_init(c,MPI_Comm_f2c(ce)); */
-  comm_world(cp);
-  if(cp->np != np)
-    fail(1,file,line,"comm_init_check: passed P=%u, "
-                     "but MPI_Comm_size gives P=%u",
-                     (unsigned)np,(unsigned)c->np);
-#else
-  comm_world(&cp);
-  if(np != 1)
-    fail(1,file,line,"comm_init_check: passed P=%u, but not compiled with -DMPI",(unsigned)np);
-#endif
-}
-#define comm_init_check(c,ce,np) comm_init_check_(c,ce,np,__FILE__,__LINE__)
 
 
 // Tear down the msg queues and associated locks.
@@ -64,28 +54,31 @@ void comm_finalize()
 {
 #ifdef MPI
   MPI_Finalize();
-#elifdef __UPC__
+#elif __UPC__
 
-  upc_forall (int i=0; i<THREADS; i++; i) {
+  // TODO: add back once proper ifdefs are in place
 
-    upc_lock(msg_queue_lock[i]);
-    //todo: msg_queue[i];
-    msg_queue[i] = NULL;
-    upc_unlock(msg_queue_lock[i]);
-    
-    upc_global_lock_free(msg_queue_lock[i]);
-    msg_queue_lock[i] = NULL;
-  }
+  //  upc_lock(msg_queue_lock[MYTHREAD]);
+  //todo: msg_queue[i];
+  //  msg_queue[MYTHREAD] = NULL;
+  //  upc_unlock(msg_queue_lock[MYTHREAD]);
   
+  //  upc_global_lock_free(msg_queue_lock[MYTHREAD]); CRAY Specific?
+  //  upc_lock_free(msg_queue_lock[MYTHREAD]);
+  //  msg_queue_lock[MYTHREAD] = NULL;
+  //  upc_barrier;
 #endif
 }
 
 
 // Allocate memory for the comms
 // Take in a pointer to a communicator (comm_ptr is: struct comm*)
-#ifdef __UPC__
+
 int comm_alloc(comm_ptr cp, size_t n)
 {
+#ifdef MPI
+  return 0;
+#elif __UPC__
   int id = cp->id;
   int np = cp->np;
   shared[] char *tmp;
@@ -145,8 +138,9 @@ int comm_alloc(comm_ptr cp, size_t n)
 #endif
 
   return 0;
-}
 #endif
+}
+
 
 
 // Manufacture a UPC equivalent of comm_world if UPC
@@ -204,10 +198,6 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->buf_dir = NULL;
     cpd->buf = NULL;
     cpd->flgs = NULL;
-    if (cp->buf_len > 0) {
-      comm_alloc(cpd,cp->buf_len);
-      upc_memcpy(cpd->buf_dir[cpd->id], cp->buf_dir[cp->id], cpd->buf_len);
-    }
 #endif
 
     *cpp = cpd;
@@ -234,6 +224,7 @@ void comm_free(comm_ptr *cpp)
       upc_free(cp->buf_dir);
       upc_free(cp->flgs);
     }
+    upc_barrier;
     cp->buf_dir = NULL;
     cp->buf = NULL;
     cp->buf_len = 0;
@@ -321,13 +312,9 @@ void comm_tag_ub(const comm_ptr cp, int *ub)
 void comm_time(double *tm)
 {
   if (NULL == tm) return;
-#ifdef MPI
-  *tm = MPI_Wtime();
-#else
   struct timeval tv;
   gettimeofday(&tv,NULL);
   *tm = tv.tv_sec + 1e-6*tv.tv_usec;
-#endif
 }
 
 // Helper function for a comms barrier
@@ -581,8 +568,9 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
 void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer)
 {
+
 #ifdef HAVE_MPI
-  scan_imp(scan, com,dom,op, v,vn, buffer);
+  scan_imp(scan, cp,dom,op, v,vn, buffer);
 #elif __UPC__
   int d;
   uint D;

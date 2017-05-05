@@ -604,7 +604,7 @@ static void cr_exec(
 #endif
   /* crystal router */
   for(k=0;k<nstages;++k) {
-#ifdef HAVE_MPi
+#ifdef HAVE_MPI
     comm_req req[3];
     if(stage[k].nrecvn)
       comm_irecv(&req[1],comm,buf_new,unit_size*stage[k].size_r1,
@@ -790,8 +790,10 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
   uint size_max=0;
   uint tag = comm->np;
   uint st = 0;
+#ifdef __UPC__
   comm->flgs[MYTHREAD] = -1; 
   upc_barrier;
+#endif
   while(n>1) {
     uint nl = (n+1)/2, bh = bl+nl;
     uint nkeep, nsend[2], nrecv[2][2] = {{0,0},{0,0}};
@@ -810,12 +812,10 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     while(comm->flgs[stage->p1] != (st - 1)) ;
     upc_memput(comm->buf_dir[stage->p1], nsend, 2 * sizeof(uint));
     comm->flgs[stage->p1] = -2;
-
     while(comm->flgs[MYTHREAD] != -2) ;
     memcpy(nrecv[0], comm->buf, 2 * sizeof(uint));
     comm->flgs[MYTHREAD] = -3;
 #endif
-
     stage->size_r1 = nrecv[0][1], stage->size_r2 = nrecv[1][1];
     stage->size_r = stage->size_r1 + stage->size_r2;
     stage->size_total = stage->size_r + stage->size_sk;
@@ -823,7 +823,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     array_reserve(struct crl_id,cw,cw->n+nrecv[0][0]+nrecv[1][0]);
     wrecv[0] = cw->ptr, wrecv[0] += cw->n, wrecv[1] = wrecv[0]+nrecv[0][0];
     wsend = cw->ptr, wsend += nkeep;
-#ifdef HAVE_MPi
+#ifdef HAVE_MPI
     if(stage->nrecvn   )
       comm_irecv(&req[1],comm,wrecv[0],nrecv[0][0]*sizeof(struct crl_id),
                  stage->p1,tag);
@@ -834,9 +834,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     comm_isend(&req[0],comm,wsend,nsend[0]*sizeof(struct crl_id),stage->p1,tag);
     comm_wait(req,1+stage->nrecvn),++tag;
 #elif __UPC__
-    
     sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
-
     while(comm->flgs[stage->p1] != -3) ;
     upc_memput(comm->buf_dir[stage->p1], wsend, nsend[0]*sizeof(struct crl_id));
     comm->flgs[stage->p1] = -4;
@@ -874,7 +872,7 @@ static struct cr_data *cr_setup_aux(
   /* default behavior: send only locally unflagged data */
   
   *mem_size += cr_schedule(crd,comm);
-  comm_alloc(comm, *mem_size);
+  comm_alloc(comm, THREADS * (*mem_size)); /* Too much? */
   sarray_sort(struct shared_id,sh->ptr,sh->n, i,0, buf);
   crl_work_init(&cw,sh, FLAGS_LOCAL , comm->id);
   size_max[0]=cr_learn(&cw,crd->stage[0],comm,buf, mem_size);
@@ -886,6 +884,7 @@ static struct cr_data *cr_setup_aux(
   array_free(&cw);
   
   crd->buffer_size = 2*crd->stage_buffer_size;
+  comm_alloc(comm, crd->buffer_size);
   return crd;
 }
 
@@ -1158,7 +1157,7 @@ static void gs_setup_aux(struct gs_data *gsh, const slong *id, uint n,
   struct crystal cr;
 
   crystal_init(&cr,gsh->comm);
-  
+
   get_topology(&top, id,n, &cr);
   if(unique) make_topology_unique(&top,0,gsh->comm->id,&cr.data);
 
@@ -1269,9 +1268,10 @@ void fgs_setup(sint *handle, const slong id[], const sint *n,
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-  comm_dup(&(gsh->comm),*comm);
+  //  comm_dup(&(gsh->comm),*comm);
+  comm_world(&(gsh->comm));
   //gs_setup_aux(gsh,id,*n,0,gs_auto,1);
-  gs_setup_aux(gsh,id,*n,0,gs_all_reduce,1);
+  gs_setup_aux(gsh,id,*n,0,gs_auto,1);
   *handle = fgs_n++;
 }
 
