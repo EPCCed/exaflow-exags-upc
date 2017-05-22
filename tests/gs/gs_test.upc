@@ -41,22 +41,23 @@ void teardown() {
 }
 
 START_TEST(test_setup_crystal) {
-  struct comm c;
+  comm_ptr cp;
   struct gs_data *gsh;
 
-  comm_init(&c, 0);
+  comm_init();
+  comm_world(&cp);
 
-  const uint np = c.np;
+  const uint np = cp->np;
   slong *id = tmalloc(slong,np+4);
   double *v = tmalloc(double,np+4);
   uint i;
-  id[0] = -(slong)(np+10+3*c.id);
+  id[0] = -(slong)(np+10+3*cp->id);
   for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
-  id[np+1] = c.id+1;
-  id[np+2] = c.id+1;
-  id[np+3] = np-c.id;
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
 
-  gsh = gs_setup(id,np+4,&c,0,gs_crystal_router,1);
+  gsh = gs_setup(id,np+4,cp,0,gs_crystal_router,1);
   free(id);
   gs_free(gsh);
 
@@ -64,66 +65,69 @@ START_TEST(test_setup_crystal) {
 
 
 START_TEST(test_setup_all_reduce) {
-  struct comm c;
+  comm_ptr cp;
   struct gs_data *gsh;
 
-  comm_init(&c, 0);
+  comm_init();
+  comm_world(&cp);
 
-  const uint np = c.np;
+  const uint np = cp->np;
   slong *id = tmalloc(slong,np+4);
   double *v = tmalloc(double,np+4);
   uint i;
-  id[0] = -(slong)(np+10+3*c.id);
+  id[0] = -(slong)(np+10+3*cp->id);
   for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
-  id[np+1] = c.id+1;
-  id[np+2] = c.id+1;
-  id[np+3] = np-c.id;
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
 
-  gsh = gs_setup(id,np+4,&c,0,gs_all_reduce,1);
+  gsh = gs_setup(id,np+4,cp,0,gs_all_reduce,1);
   free(id);
   gs_free(gsh);
 
 } END_TEST
 
 START_TEST(test_setup_auto) {
-  struct comm c;
+  comm_ptr cp;
   struct gs_data *gsh;
 
-  comm_init(&c, 0);
+  comm_init();
+  comm_world(&cp);
 
-  const uint np = c.np;
+  const uint np = cp->np;
   slong *id = tmalloc(slong,np+4);
   double *v = tmalloc(double,np+4);
   uint i;
-  id[0] = -(slong)(np+10+3*c.id);
+  id[0] = -(slong)(np+10+3*cp->id);
   for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
-  id[np+1] = c.id+1;
-  id[np+2] = c.id+1;
-  id[np+3] = np-c.id;
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
 
-  gsh = gs_setup(id,np+4,&c,0,gs_auto,1);
+  gsh = gs_setup(id,np+4,cp,0,gs_auto,1);
   free(id);
   gs_free(gsh);
 
 } END_TEST
 
 START_TEST(test_gs_crystal_router) {
-  struct comm comm;
+  comm_ptr cp;
   struct gs_data *gsh;
 
-  comm_init(&comm, 0);
+  comm_init();
+  comm_world(&cp);
 
-  const uint np = comm.np;
+  const uint np = cp->np;
   slong *id = tmalloc(slong,np+4);
   double *v = tmalloc(double,np+4);
   uint i;
-  id[0] = -(slong)(np+10+3*comm.id);
+  id[0] = -(slong)(np+10+3*cp->id);
   for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
-  id[np+1] = comm.id+1;
-  id[np+2] = comm.id+1;
-  id[np+3] = np-comm.id;
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
 
-  gsh = gs_setup(id,np+4,&comm,0,gs_crystal_router,1);
+  gsh = gs_setup(id,np+4,cp,0,gs_crystal_router,1);
   free(id);
   
   for(i=0;i<np+4;++i) v[i] = 1;
@@ -138,22 +142,23 @@ START_TEST(test_gs_crystal_router) {
 } END_TEST
 
 START_TEST(test_gs_all_reduce) {
-  struct comm comm;
+  comm_ptr cp;
   struct gs_data *gsh;
 
-  comm_init(&comm, 0);
+  comm_init();
+  comm_world(&cp);
 
-  const uint np = comm.np;
+  const uint np = cp->np;
   slong *id = tmalloc(slong,np+4);
   double *v = tmalloc(double,np+4);
   uint i;
-  id[0] = -(slong)(np+10+3*comm.id);
+  id[0] = -(slong)(np+10+3*cp->id);
   for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
-  id[np+1] = comm.id+1;
-  id[np+2] = comm.id+1;
-  id[np+3] = np-comm.id;
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
 
-  gsh = gs_setup(id,np+4,&comm,0,gs_all_reduce,1);
+  gsh = gs_setup(id,np+4,cp,0,gs_all_reduce,1);
   free(id);
   
   for(i=0;i<np+4;++i) v[i] = 1;
@@ -168,22 +173,23 @@ START_TEST(test_gs_all_reduce) {
 } END_TEST
 
 START_TEST(test_gs_auto) {
-  struct comm comm;
+  comm_ptr cp;
   struct gs_data *gsh;
 
-  comm_init(&comm, 0);
+  comm_init();
+  comm_world(&cp);
 
-  const uint np = comm.np;
+  const uint np = cp->np;
   slong *id = tmalloc(slong,np+4);
   double *v = tmalloc(double,np+4);
   uint i;
-  id[0] = -(slong)(np+10+3*comm.id);
+  id[0] = -(slong)(np+10+3*cp->id);
   for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
-  id[np+1] = comm.id+1;
-  id[np+2] = comm.id+1;
-  id[np+3] = np-comm.id;
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
 
-  gsh = gs_setup(id,np+4,&comm,0,gs_auto,1);
+  gsh = gs_setup(id,np+4,cp,0,gs_auto,1);
   free(id);
   
   for(i=0;i<np+4;++i) v[i] = 1;
