@@ -74,6 +74,8 @@ void crystal_free(struct crystal *cr)
 #elif __UPC__
   if (MYTHREAD == 0)
     upc_free(cr->size);
+  upc_barrier;
+  cr->size = NULL;
 #endif
 }
 
