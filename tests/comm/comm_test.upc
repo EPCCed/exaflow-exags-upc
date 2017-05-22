@@ -37,121 +37,86 @@ void teardown() {
 }
 
 START_TEST(test_init) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
   int np;
 
-#ifdef MPI
-  ce = MPI_COMM_WORLD;
-#else
-  ce = 0;
-#endif 
+  comm_init();
 
-  comm_init(&c, ce);
+  comm_world(&cp);
+
 
 #ifdef MPI
-  MPI_Comm_size(ce, &np);
-  fail_unless(c.np == np);  
+  MPI_Comm_size(cp->h, &np);
+  fail_unless(cp->np == np);  
 #elif defined(__UPC__)
-  fail_unless(c.np == THREADS);
-  fail_unless(c.id == MYTHREAD);
-  fail_unless(c.buf_dir == NULL);
-  fail_unless(c.buf == NULL);
-  fail_unless(c.buf_len == 0);
-  fail_unless(c.flgs == NULL);
+  fail_unless(cp->np == THREADS);
+  fail_unless(cp->id == MYTHREAD);
+  fail_unless(cp->buf_dir == NULL);
+  fail_unless(cp->buf == NULL);
+  fail_unless(cp->buf_len == 0);
+  fail_unless(cp->flgs == NULL);
 #endif
 
 } END_TEST
 
-#ifdef __UPC__
 START_TEST(test_alloc) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
   size_t n;
   int i;
 
-#ifdef MPI
-  ce = MPI_COMM_WORLD;
-#else
-  ce = 0;
-#endif 
-
-  comm_init(&c, ce);
+  comm_init();
+  comm_world(&cp);
+#ifdef __UPC__
 
   n = 42 * sizeof(char);  
-  comm_alloc(&c, n);
-  fail_unless(c.buf_dir != NULL);
-  fail_unless(c.buf_dir[MYTHREAD] != NULL);
-  fail_unless(c.buf != NULL);
-  fail_unless(c.buf_len == n);
+  comm_alloc(cp, n);
+  fail_unless(cp->buf_dir != NULL);
+  fail_unless(cp->buf_dir[MYTHREAD] != NULL);
+  fail_unless(cp->buf != NULL);
+  fail_unless(cp->buf_len == n);
 
-  memset(c.buf, 1, n);
+  memset(cp->buf, 1, n);
 
 
   n = 1147 * sizeof(char);
-  comm_alloc(&c, n);
-  fail_unless(c.buf_dir != NULL);
-  fail_unless(c.buf_dir[MYTHREAD] != NULL);
-  fail_unless(c.buf != NULL);
-  fail_unless(c.buf_len == n);
+  comm_alloc(cp, n);
+  fail_unless(cp->buf_dir != NULL);
+  fail_unless(cp->buf_dir[MYTHREAD] != NULL);
+  fail_unless(cp->buf != NULL);
+  fail_unless(cp->buf_len == n);
   
   for (i = 0; i < 42; i++)
-    fail_unless(c.buf[i] == 1);
+    fail_unless(cp->buf[i] == 1);
 
   n = 10 * sizeof(char);
-  comm_alloc(&c, n);
-  fail_unless(c.buf_dir != NULL);
-  fail_unless(c.buf_dir[MYTHREAD] != NULL);
-  fail_unless(c.buf != NULL);
-  fail_unless(c.buf_len != n);
+  comm_alloc(cp, n);
+  fail_unless(cp->buf_dir != NULL);
+  fail_unless(cp->buf_dir[MYTHREAD] != NULL);
+  fail_unless(cp->buf != NULL);
+  fail_unless(cp->buf_len != n);
 
   for (i = 0; i < 42; i++)
-    fail_unless(c.buf[i] == 1);
-
-} END_TEST
+    fail_unless(cp->buf[i] == 1);
 #endif
+} END_TEST
+
 
 START_TEST(test_free) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
+  comm_ptr cp_old;
 
-#ifdef MPI
-  ce = MPI_COMM_WORLD;
-#else
-  ce = 0;
-#endif 
-
-  comm_init(&c, ce);
-
-  comm_free(&c);  
-#ifdef MPI
-  fail_unless(c.c == MPI_COMM_NULL);
-#elif defined(__UPC__)
-  fail_unless(c.buf_dir == NULL);
-  fail_unless(c.buf == NULL);
-  fail_unless(c.buf_len == 0);
-  fail_unless(c.flgs == NULL);
-#endif
-
-
-  comm_free(&c);  
-#ifdef MPI
-  fail_unless(c.c == MPI_COMM_NULL);
-#elif defined(__UPC__)
-  fail_unless(c.buf_dir == NULL);
-  fail_unless(c.buf == NULL);
-  fail_unless(c.buf_len == 0);
-  fail_unless(c.flgs == NULL);
-#endif
-
-
+  comm_init();
+  comm_world(&cp);
+  cp_old = &cp;
+  comm_free(&cp);
+  fail_unless(cp == NULL);
+  comm_free(&cp);  
+  fail_unless(cp == NULL);
 
 } END_TEST
 
-
 START_TEST(test_reduce) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
   int int_v, int_glb;
   long long_v, long_glb;
   float float_v, float_glb;
@@ -159,174 +124,130 @@ START_TEST(test_reduce) {
 
   int np;
 
-#ifdef MPI
-  ce = MPI_COMM_WORLD;
-  MPI_Comm_size(ce, &np);
-#elif __UPC__
-  ce = 0;
-  np = THREADS;
-#else
-  ce = 0;
-  np = 1;
-#endif
-  
-  comm_init(&c, ce);
+  comm_init();
+  comm_world(&cp);
 
-  int_v = c.id + 1;
-  int_glb = comm_reduce_int(&c, gs_add, (int *) &int_v, 1);
+  np = cp->np;
+  
+  int_v = cp->id + 1;
+  int_glb = comm_reduce_int(cp, gs_add, (int *) &int_v, 1);
   fail_unless(int_glb == (np * (np + 1)>>1));
 
-  long_v = c.id + 1;
-  long_glb = comm_reduce_long(&c, gs_add, (long *) &long_v, 1);
+  long_v = cp->id + 1;
+  long_glb = comm_reduce_long(cp, gs_add, (long *) &long_v, 1);
   fail_unless(long_glb == (np * (np + 1)>>1));
 
-  float_v = (float) c.id + 1;
-  float_glb= comm_reduce_float(&c, gs_add, (float *) &float_v, 1);
+  float_v = (float) cp->id + 1;
+  float_glb= comm_reduce_float(cp, gs_add, (float *) &float_v, 1);
   fail_unless(float_glb == (np * (np + 1)>>1));
 
-  double_v= c.id + 1;
-  double_glb = comm_reduce_double(&c, gs_add, (double *) &double_v, 1);
+  double_v= cp->id + 1;
+  double_glb = comm_reduce_double(cp, gs_add, (double *) &double_v, 1);
   fail_unless(double_glb == (np * (np + 1)>>1));
 
-  comm_free(&c);
+  comm_free(&cp);
 } END_TEST
 
 START_TEST(test_allreduce) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
   int int_v[2], int_glb[2];
   long long_v[2], long_glb[2];
   float float_v[2], float_glb[2];
   double double_v[2], double_glb[2];
   int size;
 
-#ifdef MPI
-  ce = MPI_COMM_WORLD;
-  MPI_Comm_size(ce, &size);
-#elif __UPC__
-  ce = 0;
-  size = THREADS;
-#else
-  ce = 0;
-  size = 1;
-#endif
-  
-  comm_init(&c, ce);
+  comm_init();
+  comm_world(&cp);
 
-  /*
-   * Scalar reductions
-   */
-  int_v[0] = c.id + 1;
-  comm_allreduce(&c, gs_int, gs_add, int_v, 1, int_glb);
+  size = cp->np;
+  
+  int_v[0] = cp->id + 1;
+  comm_allreduce(cp, gs_int, gs_add, int_v, 1, int_glb);
   fail_unless(int_glb[0] == (size * (size + 1))>>1);
 
-  long_v[0] = c.id + 1;
-  comm_allreduce(&c, gs_long, gs_add, long_v, 1, long_glb);
+  long_v[0] = cp->id + 1;
+  comm_allreduce(cp, gs_long, gs_add, long_v, 1, long_glb);
   fail_unless(long_glb[0] == (size * (size + 1))>>1);
 
-  float_v[0] = (float) c.id + 1.0;
-  comm_allreduce(&c, gs_float, gs_add, float_v, 1, float_glb);
+  float_v[0] = (float) cp->id + 1.0;
+  comm_allreduce(cp, gs_float, gs_add, float_v, 1, float_glb);
   fail_unless(float_glb[0] == (float) ((size * (size + 1))>>1));
 
-  double_v[0] = (double) c.id + 1.0;
-  comm_allreduce(&c, gs_double, gs_add, double_v, 1, double_glb);
+  double_v[0] = (double) cp->id + 1.0;
+  comm_allreduce(cp, gs_double, gs_add, double_v, 1, double_glb);
   fail_unless(double_glb[0] == (double) ((size * (size + 1))>>1));
 
-  /*
-   * Vector reductions (element-wise)
-   */
-  int_v[0] = c.id + 1;
-  int_v[1] = c.id + 1;
+  int_v[0] = cp->id + 1;
+  int_v[1] = cp->id + 1;
   memset(int_glb, 0, 2 * sizeof(int));
-  comm_allreduce(&c, gs_int, gs_add, int_v, 2, int_glb);
+  comm_allreduce(cp, gs_int, gs_add, int_v, 2, int_glb);
   fail_unless(int_glb[0] == (size * (size + 1))>>1);
   fail_unless(int_glb[1] == (size * (size + 1))>>1);
 
-  long_v[0] = c.id + 1;
-  long_v[1] = c.id + 1;
+  long_v[0] = cp->id + 1;
+  long_v[1] = cp->id + 1;
   memset(long_glb, 0, 2 * sizeof(long));
-  comm_allreduce(&c, gs_long, gs_add, long_v, 2, long_glb);
+  comm_allreduce(cp, gs_long, gs_add, long_v, 2, long_glb);
   fail_unless(long_glb[0] == (size * (size + 1))>>1);
   fail_unless(long_glb[1] == (size * (size + 1))>>1);
 
-  float_v[0] = (float) c.id + 1.0;
-  float_v[1] = (float) c.id + 1.0;
+  float_v[0] = (float) cp->id + 1.0;
+  float_v[1] = (float) cp->id + 1.0;
   memset(float_glb, 0, 2 * sizeof(float));
-  comm_allreduce(&c, gs_float, gs_add, float_v, 2, float_glb);
+  comm_allreduce(cp, gs_float, gs_add, float_v, 2, float_glb);
   fail_unless(float_glb[0] == (size * (size + 1))>>1);
   fail_unless(float_glb[1] == (size * (size + 1))>>1);
 
 
-  double_v[0] = (double) c.id + 1.0;
-  double_v[1] = (double) c.id + 1.0;
+  double_v[0] = (double) cp->id + 1.0;
+  double_v[1] = (double) cp->id + 1.0;
   memset(double_glb, 0, 2 * sizeof(double));
-  comm_allreduce(&c, gs_double, gs_add, double_v, 2, double_glb);
+  comm_allreduce(cp, gs_double, gs_add, double_v, 2, double_glb);
   fail_unless(double_glb[0] == (size * (size + 1))>>1);
   fail_unless(double_glb[1] == (size * (size + 1))>>1);
 
 
-  comm_free(&c);
+  comm_free(&cp);
 } END_TEST
 
 START_TEST(test_scan) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
   ulong sum[2],r[2],v,check_v;
   int rank, size;
-#ifdef MPI
-  ce = MPI_COMM_WORLD;    
-  MPI_Comm_rank(ce, &rank);
-  MPI_Comm_size(ce, &size);
-#elif __UPC__
-  ce = 0;
-  size = THREADS;
-  rank = MYTHREAD;
-#else
-  ce = 0;
-  size = 1;
-  rank = 0;
-#endif
-  
-  comm_init(&c, ce);
 
-  v = c.id + 1;
-  comm_scan(sum, &c, gs_slong, gs_add, &v, 1, r);
+  comm_init();
+  comm_world(&cp);
+  size = cp->np;
+  rank = cp->id;
+
+  v = cp->id + 1;
+  comm_scan(sum, cp, gs_slong, gs_add, &v, 1, r);
   fail_unless(sum[0] == (rank * (rank + 1)>>1));
   fail_unless(sum[1] == (size * (size + 1)>>1));
 
-  comm_free(&c);
+  comm_free(&cp);
 } END_TEST
 
+
 START_TEST(test_dot) {
-  struct comm c;
-  comm_ext ce;
+  comm_ptr cp;
   double v[5], w[5], dot;
   int i, rank, size;
-#ifdef MPI
-  ce = MPI_COMM_WORLD;    
-  MPI_Comm_rank(ce, &rank);
-  MPI_Comm_size(ce, &size);
-#elif __UPC__
-  ce = 0;
-  size = THREADS;
-  rank = MYTHREAD;
-#else
-  ce = 0;
-  size = 1;
-  rank = 0;
-#endif
-  
-  comm_init(&c, ce);
+
+  comm_init();
+  comm_world(&cp);
+  size = cp->np;
+  rank = cp->id;
 
   for (i = 0; i < 5; i++) {
     v[i] = 1.0;
     w[i] = 2.0;
   }
 
-  dot = comm_dot(&c, v, w, 5);
+  dot = comm_dot(cp, v, w, 5);
   fail_unless(dot == ((double) size * 10.0));
 
-  comm_free(&c);
+  comm_free(&cp);
 } END_TEST
 
 Suite *comm_suite() {
@@ -355,9 +276,9 @@ Suite *comm_suite() {
   tcase_add_test(tc, test_allreduce);
   suite_add_tcase(s, tc);
 
-  //  tc = tcase_create("comm_scan");
-  //  tcase_add_test(tc, test_scan);
-  //  suite_add_tcase(s, tc);
+  tc = tcase_create("comm_scan");
+  tcase_add_test(tc, test_scan);
+  suite_add_tcase(s, tc);
 
   tc = tcase_create("comm_dot");
   tcase_add_test(tc, test_dot);
