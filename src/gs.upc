@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "c99.h"
@@ -195,7 +196,7 @@ static ulong shared_ids(struct array *sh, struct array *pr,
   struct array wa; struct shared_id_work *w;
   uint n_unique;
   /* construct list of all unique id's on this proc */
-  unique_ids(&un,nz,cr->comm.np);
+  unique_ids(&un,nz,cr->comm->np);
   n_unique = un.n;
   /* transfer list to work procs */
   sarray_transfer(struct unique_id,&un, work_proc,1, cr);
@@ -209,7 +210,7 @@ static ulong shared_ids(struct array *sh, struct array *pr,
     other=un_row+1;
     if(other!=un_end&&other->id==id) last_id=id, ++n_shared;
   }
-  comm_scan(ordinal, &cr->comm,gs_slong,gs_add, &n_shared,1, scan_buf);
+  comm_scan(ordinal, cr->comm,gs_slong,gs_add, &n_shared,1, scan_buf);
   /* there are ordinal[1] globally shared unique ids;
            and ordinal[0] of those are seen by work procs of lower rank;
      i.e., this work processor sees the range ordinal[0] + (0,n_shared-1) */
@@ -374,7 +375,7 @@ static const uint *flagged_primaries_map(const struct array *nz, uint *mem_size)
 
 typedef void exec_fun(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
-  unsigned transpose, const void *execdata, const struct comm *comm, char *buf);
+  unsigned transpose, const void *execdata, const comm_ptr comm, char *buf);
 typedef void fin_fun(void *data);
 
 struct gs_remote {
@@ -385,7 +386,7 @@ struct gs_remote {
 };
 
 typedef void setup_fun(struct gs_remote *r, struct gs_topology *top,
-                       const struct comm *comm, buffer *buf);
+                       const comm_ptr comm, buffer *buf);
 
 /*------------------------------------------------------------------------------
   Pairwise Execution
@@ -405,7 +406,7 @@ struct pw_data {
 };
 
 static char *pw_exec_recvs(char *buf, const unsigned unit_size,
-                           const struct comm *comm,
+                           const comm_ptr comm,
                            const struct pw_comm_data *c, comm_req *req)
 {
   const uint *p, *pe, *size=c->size;
@@ -418,7 +419,7 @@ static char *pw_exec_recvs(char *buf, const unsigned unit_size,
 }
 
 static char *pw_exec_sends(char *buf, const unsigned unit_size,
-                           const struct comm *comm,
+                           const comm_ptr comm,
                            const struct pw_comm_data *c, comm_req *req)
 {
   const uint *p, *pe, *size=c->size;
@@ -432,7 +433,7 @@ static char *pw_exec_sends(char *buf, const unsigned unit_size,
 
 static void pw_exec(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
-  unsigned transpose, const void *execdata, const struct comm *comm, char *buf)
+  unsigned transpose, const void *execdata, const comm_ptr comm, char *buf)
 {
   const struct pw_data *pwd = execdata;
   static gs_scatter_fun *const scatter_to_buf[] =
@@ -442,6 +443,8 @@ static void pw_exec(
   const unsigned recv = 0^transpose, send = 1^transpose;
   unsigned unit_size = vn*gs_dom_size[dom];
   char *sendbuf;
+
+
   /* post receives */
   sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
   /* fill send buffer */
@@ -522,7 +525,7 @@ static struct pw_data *pw_setup_aux(struct array *sh, buffer *buf,
 {
   struct pw_data *pwd = tmalloc(struct pw_data,1);
   *mem_size = sizeof(struct pw_data);
-  
+
   /* default behavior: receive only remotely unflagged data */
   *mem_size+=pw_comm_setup(&pwd->comm[0],sh, FLAGS_REMOTE, buf);
   pwd->map[0] = pw_map_setup(sh, buf, mem_size);
@@ -548,7 +551,7 @@ static void pw_free(struct pw_data *data)
 }
 
 static void pw_setup(struct gs_remote *r, struct gs_topology *top,
-                     const struct comm *comm, buffer *buf)
+                     const comm_ptr comm, buffer *buf)
 {
   struct pw_data *pwd = pw_setup_aux(&top->sh,buf, &r->mem_size);
   r->buffer_size = pwd->buffer_size;
@@ -576,7 +579,7 @@ struct cr_data {
 
 static void cr_exec(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
-  unsigned transpose, const void *execdata, const struct comm *comm, char *buf)
+  unsigned transpose, const void *execdata, const comm_ptr comm, char *buf)
 {
   const struct cr_data *crd = execdata;
   static gs_scatter_fun *const scatter_user_to_buf[] =
@@ -595,8 +598,13 @@ static void cr_exec(
   const struct cr_stage *stage = crd->stage[transpose];
   buf_old = buf;
   buf_new = buf_old + unit_size*crd->stage_buffer_size;
+#ifdef __UPC__
+  comm->flgs[MYTHREAD] = -1; 
+  upc_barrier;
+#endif
   /* crystal router */
   for(k=0;k<nstages;++k) {
+#ifdef HAVE_MPI
     comm_req req[3];
     if(stage[k].nrecvn)
       comm_irecv(&req[1],comm,buf_new,unit_size*stage[k].size_r1,
@@ -604,6 +612,7 @@ static void cr_exec(
     if(stage[k].nrecvn==2)
       comm_irecv(&req[2],comm,buf_new+unit_size*stage[k].size_r1,
                unit_size*stage[k].size_r2, stage[k].p2, comm->np+k);
+#endif
     sendbuf = buf_new+unit_size*stage[k].size_r;
     if(k==0)
       scatter_user_to_buf[mode](sendbuf,data,vn,stage[0].scatter_map,dom);
@@ -611,9 +620,20 @@ static void cr_exec(
       scatter_buf_to_buf[mode](sendbuf,buf_old,vn,stage[k].scatter_map,dom),
       gather_buf_to_buf [mode](sendbuf,buf_old,vn,stage[k].gather_map ,dom,op);
 
+#ifdef HAVE_MPI
     comm_isend(&req[0],comm,sendbuf,unit_size*stage[k].size_s,
                stage[k].p1, comm->np+k);
     comm_wait(&req[0],1+stage[k].nrecvn);
+#elif __UPC__
+    while(comm->flgs[stage[k].p1] != (k - 1)) ;
+    upc_memput(comm->buf_dir[stage[k].p1], sendbuf, 
+	       unit_size*stage[k].size_s);
+    comm->flgs[stage[k].p1] = -2;
+
+    while(comm->flgs[MYTHREAD] != -2) ;
+    memcpy(buf_new, comm->buf, unit_size*stage[k].size_r1);
+    comm->flgs[MYTHREAD] = k;
+#endif
     { char *t = buf_old; buf_old=buf_new; buf_new=t; }
   }
   scatter_buf_to_user[mode](data,buf_old,vn,stage[k].scatter_map,dom);
@@ -623,7 +643,7 @@ static void cr_exec(
 /*------------------------------------------------------------------------------
   Crystal-Router setup
 ------------------------------------------------------------------------------*/
-static uint cr_schedule(struct cr_data *data, const struct comm *comm)
+static uint cr_schedule(struct cr_data *data, const comm_ptr comm)
 {
   uint mem_size = 0;
   const uint id = comm->id;
@@ -762,13 +782,18 @@ static void crl_ri_to_bi(struct crl_id *w, uint n) {
 }
 
 static uint cr_learn(struct array *cw, struct cr_stage *stage,
-                     const struct comm *comm, buffer *buf, uint *mem_size)
+                     const comm_ptr comm, buffer *buf, uint *mem_size)
 {
   comm_req req[3];
   const uint id = comm->id;
   uint bl=0, n=comm->np;
   uint size_max=0;
   uint tag = comm->np;
+  uint st = 0;
+#ifdef __UPC__
+  comm->flgs[MYTHREAD] = -1; 
+  upc_barrier;
+#endif
   while(n>1) {
     uint nl = (n+1)/2, bh = bl+nl;
     uint nkeep, nsend[2], nrecv[2][2] = {{0,0},{0,0}};
@@ -776,22 +801,29 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     nsend[0] = crl_work_label(cw,stage,bh,id<bh,buf, mem_size);
     nsend[1] = stage->size_s;
     nkeep = cw->n - nsend[0];
-
+#ifdef HAVE_MPI
     if(stage->nrecvn   ) comm_irecv(&req[1],comm,nrecv[0],2*sizeof(uint),
                                     stage->p1,tag);
     if(stage->nrecvn==2) comm_irecv(&req[2],comm,nrecv[1],2*sizeof(uint),
                                     stage->p2,tag);
     comm_isend(&req[0],comm,nsend,2*sizeof(uint),stage->p1,tag);
     comm_wait(req,1+stage->nrecvn),++tag;
-    
+#elif __UPC__
+    while(comm->flgs[stage->p1] != (st - 1)) ;
+    upc_memput(comm->buf_dir[stage->p1], nsend, 2 * sizeof(uint));
+    comm->flgs[stage->p1] = -2;
+    while(comm->flgs[MYTHREAD] != -2) ;
+    memcpy(nrecv[0], comm->buf, 2 * sizeof(uint));
+    comm->flgs[MYTHREAD] = -3;
+#endif
     stage->size_r1 = nrecv[0][1], stage->size_r2 = nrecv[1][1];
     stage->size_r = stage->size_r1 + stage->size_r2;
     stage->size_total = stage->size_r + stage->size_sk;
     if(stage->size_total>size_max) size_max=stage->size_total;
-    
     array_reserve(struct crl_id,cw,cw->n+nrecv[0][0]+nrecv[1][0]);
     wrecv[0] = cw->ptr, wrecv[0] += cw->n, wrecv[1] = wrecv[0]+nrecv[0][0];
     wsend = cw->ptr, wsend += nkeep;
+#ifdef HAVE_MPI
     if(stage->nrecvn   )
       comm_irecv(&req[1],comm,wrecv[0],nrecv[0][0]*sizeof(struct crl_id),
                  stage->p1,tag);
@@ -801,6 +833,17 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
     comm_isend(&req[0],comm,wsend,nsend[0]*sizeof(struct crl_id),stage->p1,tag);
     comm_wait(req,1+stage->nrecvn),++tag;
+#elif __UPC__
+    sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
+    while(comm->flgs[stage->p1] != -3) ;
+    upc_memput(comm->buf_dir[stage->p1], wsend, nsend[0]*sizeof(struct crl_id));
+    comm->flgs[stage->p1] = -4;
+
+    while(comm->flgs[MYTHREAD] != -4) ;
+    memcpy(wrecv[0], comm->buf, nsend[0]*sizeof(struct crl_id));
+    comm->flgs[MYTHREAD] = st;
+
+#endif
 
     crl_bi_to_si(cw->ptr,nkeep,stage->size_r);
     if(stage->nrecvn)    crl_bi_to_si(wrecv[0],nrecv[0][0],0);
@@ -808,9 +851,9 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     memmove(wsend,wrecv[0],(nrecv[0][0]+nrecv[1][0])*sizeof(struct crl_id));
     cw->n += nrecv[0][0] + nrecv[1][0];
     cw->n -= nsend[0];
-    
     if(id<bh) n=nl; else n-=nl,bl=bh;
     ++stage;
+    ++st;
   }
   crl_ri_to_bi(cw->ptr,cw->n);
   *mem_size += crl_maps(stage,cw,buf);
@@ -818,7 +861,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
 }
 
 static struct cr_data *cr_setup_aux(
-  struct array *sh, const struct comm *comm, buffer *buf, uint *mem_size)
+  struct array *sh, const comm_ptr comm, buffer *buf, uint *mem_size)
 {
   uint size_max[2];
   struct array cw = null_array;
@@ -829,7 +872,7 @@ static struct cr_data *cr_setup_aux(
   /* default behavior: send only locally unflagged data */
   
   *mem_size += cr_schedule(crd,comm);
-
+  comm_alloc(comm, THREADS * (*mem_size)); /* Too much? */
   sarray_sort(struct shared_id,sh->ptr,sh->n, i,0, buf);
   crl_work_init(&cw,sh, FLAGS_LOCAL , comm->id);
   size_max[0]=cr_learn(&cw,crd->stage[0],comm,buf, mem_size);
@@ -841,6 +884,7 @@ static struct cr_data *cr_setup_aux(
   array_free(&cw);
   
   crd->buffer_size = 2*crd->stage_buffer_size;
+  comm_alloc(comm, crd->buffer_size);
   return crd;
 }
 
@@ -863,7 +907,7 @@ static void cr_free(struct cr_data *data)
 }
 
 static void cr_setup(struct gs_remote *r, struct gs_topology *top,
-                     const struct comm *comm, buffer *buf)
+                     const comm_ptr comm, buffer *buf)
 {
   struct cr_data *crd = cr_setup_aux(&top->sh,comm,buf, &r->mem_size);
   r->buffer_size = crd->buffer_size;
@@ -882,7 +926,7 @@ struct allreduce_data {
 
 static void allreduce_exec(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
-  unsigned transpose, const void *execdata, const struct comm *comm, char *buf)
+  unsigned transpose, const void *execdata, const comm_ptr comm, char *buf)
 {
   const struct allreduce_data *ard = execdata;
   static gs_scatter_fun *const scatter_to_buf[] =
@@ -954,7 +998,7 @@ static void allreduce_free(struct allreduce_data *ard)
 }
 
 static void allreduce_setup(struct gs_remote *r, struct gs_topology *top,
-                            const struct comm *comm, buffer *buf)
+                            const comm_ptr comm, buffer *buf)
 {
   struct allreduce_data *ard
     = allreduce_setup_aux(&top->pr,top->total_shared, &r->mem_size);
@@ -969,17 +1013,18 @@ static void allreduce_setup(struct gs_remote *r, struct gs_topology *top,
 ------------------------------------------------------------------------------*/
 
 static void dry_run_time(double times[3], const struct gs_remote *r,
-                         const struct comm *comm, buffer *buf)
+                         const comm_ptr comm, buffer *buf)
 {
-  int i; double t;
+  int i; double t0, t;
   buffer_reserve(buf,gs_dom_size[gs_double]*r->buffer_size);
   for(i= 2;i;--i)
     r->exec(0,mode_dry_run,1,gs_double,gs_add,0,r->data,comm,buf->ptr);
   comm_barrier(comm);
-  t = comm_time();
+  comm_time(&t0);
   for(i=10;i;--i)
     r->exec(0,mode_dry_run,1,gs_double,gs_add,0,r->data,comm,buf->ptr);
-  t = (comm_time() - t)/10;
+  comm_time(&t);
+  t = (t - t0)/10;
   times[0] = t/comm->np, times[1] = t, times[2] = t;
   comm_allreduce(comm,gs_double,gs_add, &times[0],1, &t);
   comm_allreduce(comm,gs_double,gs_min, &times[1],1, &t);
@@ -987,12 +1032,20 @@ static void dry_run_time(double times[3], const struct gs_remote *r,
 }
 
 static void auto_setup(struct gs_remote *r, struct gs_topology *top,
-                       const struct comm *comm, buffer *buf)
+                       const comm_ptr comm, buffer *buf)
 {
+#ifdef __UPC__
+  cr_setup(r, top,comm,buf);  
+#else
   pw_setup(r, top,comm,buf);
+#endif
   
   if(comm->np>1) {
+#ifdef __UPC__
+    const char *name = "crystal router";
+#else
     const char *name = "pairwise";
+#endif
     struct gs_remote r_alt;
     double time[2][3];
 
@@ -1012,10 +1065,14 @@ static void auto_setup(struct gs_remote *r, struct gs_topology *top,
         r_alt.fin(r_alt.data); \
     } while(0)
 
+#ifdef __UPC__
+    DRY_RUN(0, r, "crystal router times (avg, min, max)");
+#else
     DRY_RUN(0, r, "pairwise times (avg, min, max)");
 
     cr_setup(&r_alt, top,comm,buf);
     DRY_RUN_CHECK(      "crystal router                ", "crystal router");
+#endif
     
     if(top->total_shared<100000) {
       allreduce_setup(&r_alt, top,comm,buf);
@@ -1033,7 +1090,7 @@ static void auto_setup(struct gs_remote *r, struct gs_topology *top,
   Main Execution
 ------------------------------------------------------------------------------*/
 struct gs_data {
-  struct comm comm;
+  comm_ptr comm;
   const uint *map_local[2]; /* 0=unflagged, 1=all */
   const uint *flagged_primaries;
   struct gs_remote r;
@@ -1054,7 +1111,7 @@ static void gs_aux(
   buffer_reserve(buf,vn*gs_dom_size[dom]*gsh->r.buffer_size);
   local_gather [mode](u,u,vn,gsh->map_local[0^transpose],dom,op);
   if(transpose==0) init[mode](u,vn,gsh->flagged_primaries,dom,op);
-  gsh->r.exec(u,mode,vn,dom,op,transpose,gsh->r.data,&gsh->comm,buf->ptr);
+  gsh->r.exec(u,mode,vn,dom,op,transpose,gsh->r.data,gsh->comm,buf->ptr);
   local_scatter[mode](u,u,vn,gsh->map_local[1^transpose],dom);
 }
 
@@ -1098,30 +1155,30 @@ static void gs_setup_aux(struct gs_data *gsh, const slong *id, uint n,
 
   struct gs_topology top;
   struct crystal cr;
-  
-  crystal_init(&cr,&gsh->comm);
+
+  crystal_init(&cr,gsh->comm);
 
   get_topology(&top, id,n, &cr);
-  if(unique) make_topology_unique(&top,0,gsh->comm.id,&cr.data);
+  if(unique) make_topology_unique(&top,0,gsh->comm->id,&cr.data);
 
   gsh->handle_size = sizeof(struct gs_data);
   gsh->handle_size += local_setup(gsh,&top.nz);
 
-  if(verbose && gsh->comm.id==0)
+  if(verbose && gsh->comm->id==0)
     printf("gs_setup: %ld unique labels shared\n",(long)top.total_shared);
 
-  remote_setup[method](&gsh->r, &top,&gsh->comm,&cr.data);
+  remote_setup[method](&gsh->r, &top,gsh->comm,&cr.data);
   gsh->handle_size += gsh->r.mem_size;
 
   if(verbose) { /* report memory usage */
     double avg[2],td[2]; uint min[2],max[2],ti[2];
     avg[0] = min[0] = max[0] = gsh->handle_size;
     avg[1] = min[1] = max[1] = sizeof(double)*gsh->r.buffer_size;
-    avg[0] /= gsh->comm.np; avg[1] /= gsh->comm.np;
-    comm_allreduce(&gsh->comm,gs_double,gs_add, avg,2, td);
-    comm_allreduce(&gsh->comm,gs_sint,gs_min, min,2, ti);
-    comm_allreduce(&gsh->comm,gs_sint,gs_max, max,2, ti);
-    if(gsh->comm.id==0) {
+    avg[0] /= gsh->comm->np; avg[1] /= gsh->comm->np;
+    comm_allreduce(gsh->comm,gs_double,gs_add, avg,2, td);
+    comm_allreduce(gsh->comm,gs_sint,gs_min, min,2, ti);
+    comm_allreduce(gsh->comm,gs_sint,gs_max, max,2, ti);
+    if(gsh->comm->id==0) {
       printf("   " "handle bytes (avg, min, max)" ": " "%g %u %u\n",
         avg[0], (unsigned)min[0], (unsigned)max[0]);
       printf("   " "buffer bytes (avg, min, max)" ": " "%g %u %u\n",
@@ -1133,25 +1190,26 @@ static void gs_setup_aux(struct gs_data *gsh, const slong *id, uint n,
   crystal_free(&cr);
 }
 
-struct gs_data *gs_setup(const slong *id, uint n, const struct comm *comm,
+struct gs_data *gs_setup(const slong *id, uint n, const comm_ptr comm,
                          int unique, gs_method method, int verbose)
 {
   struct gs_data *gsh = tmalloc(struct gs_data,1);
-  comm_dup(&gsh->comm,comm);
+  comm_dup(&(gsh->comm), comm);
   gs_setup_aux(gsh,id,n,unique,method,verbose);
   return gsh;
 }
 
 void gs_free(struct gs_data *gsh)
 {
-  comm_free(&gsh->comm);
-  free((uint*)gsh->map_local[0]), free((uint*)gsh->map_local[1]);
+  comm_free(&(gsh->comm));
+  free((uint*)gsh->map_local[0]);
+  free((uint*)gsh->map_local[1]);
   free((uint*)gsh->flagged_primaries);
   gsh->r.fin(gsh->r.data);
   free(gsh);
 }
 
-void gs_unique(slong *id, uint n, const struct comm *comm)
+void gs_unique(slong *id, uint n, const comm_ptr comm)
 {
   struct gs_topology top;
   struct crystal cr;
@@ -1192,22 +1250,29 @@ static int fgs_max = 0;
 static int fgs_n = 0;
 
 void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
-                    const MPI_Fint *comm, const sint *np, const sint *method)
+                    const comm_ptr *comm, const sint *np, const sint *method)
 {
   struct gs_data *gsh;
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-  comm_init_check(&gsh->comm,*comm,*np);
+  //  comm_init_check(gsh->comm,*comm,*np);
   gs_setup_aux(gsh,id,*n,0,*method,1);
   *handle = fgs_n++;
 }
 
 void fgs_setup(sint *handle, const slong id[], const sint *n,
-               const MPI_Fint *comm, const sint *np)
+               const comm_ptr *comm, const sint *np)
 {
-  const sint method = gs_auto;
-  fgs_setup_pick(handle,id,n,comm,np,&method);
+  struct gs_data *gsh;
+  if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
+                     fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
+  gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
+  //  comm_dup(&(gsh->comm),*comm);
+  comm_world(&(gsh->comm));
+  //gs_setup_aux(gsh,id,*n,0,gs_auto,1);
+  gs_setup_aux(gsh,id,*n,0,gs_auto,1);
+  *handle = fgs_n++;
 }
 
 static void fgs_check_handle(sint handle, const char *func, unsigned line)

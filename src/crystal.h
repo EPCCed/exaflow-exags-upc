@@ -10,11 +10,14 @@
 #define crystal_router PREFIXED_NAME(crystal_router)
 
 struct crystal {
-  struct comm comm;
+  comm_ptr comm;
   buffer data, work;
+#ifdef __UPC__
+  shared strict uint volatile *size;
+#endif
 };
 
-void crystal_init(struct crystal *cr, const struct comm *comm);
+void crystal_init(struct crystal *cr, const comm_ptr comm);
 void crystal_free(struct crystal *cr);
 void crystal_router(struct crystal *cr);
 
