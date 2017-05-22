@@ -41,47 +41,49 @@ void teardown() {
 }
 
 START_TEST(test_init) {
-  struct comm c;
+  comm_ptr cp;
   struct crystal p;
 
-  comm_init(&c, 0);
-  crystal_init(&p, &c);
-  fail_unless(p.comm.np == THREADS);
-  fail_unless(p.comm.np == c.np);
+  comm_init();
+  comm_world(&cp);
+  crystal_init(&p, cp);
+  fail_unless(p.comm->np == THREADS);
+  fail_unless(p.comm->np == cp->np);
 } END_TEST
 
 START_TEST(test_free) {
-  struct comm c;
+  comm_ptr cp;
   struct crystal p;
 
-  comm_init(&c, 0);
-  crystal_init(&p, &c);
+  comm_init();
+  comm_world(&cp);
+  crystal_init(&p, cp);
   crystal_free(&p);
 
-  fail_unless(p.comm.buf_dir == NULL);
-  fail_unless(p.comm.buf == NULL);
-  fail_unless(p.comm.buf_len == 0);
-  fail_unless(p.comm.flgs == NULL);
+  fail_unless(p.comm == NULL);
+  fail_unless(p.size == NULL);
 
 } END_TEST
 
 START_TEST(test_router) {
-  struct comm c;
+  comm_ptr cp;
   struct crystal cr;
   uint i, sum, *data, *end;
 
-  comm_init(&c, 0);
-  crystal_init(&cr, &c);
-  cr.data.n = (4 + (c.id&1)) * c.np;
+  comm_init();
+  comm_world(&cp);
+  crystal_init(&cr, cp);
+
+  cr.data.n = (4 + (cp->id&1)) * cp->np;
   buffer_reserve(&cr.data, cr.data.n * sizeof(uint));
   data = cr.data.ptr;
 
-  for (i = 0; i < c.np; i++, data += 3+  data[2]) {
+  for (i = 0; i < cp->np; i++, data += 3+  data[2]) {
     data[0] = i;
-    data[1] = c.id;
+    data[1] = cp->id;
     data[2] = 1;
-    data[3] = 2*c.id;
-    if(c.id&1) {
+    data[3] = 2*cp->id;
+    if(cp->id&1) {
       data[2] = 2;
       data[4] = data[3]+1;
     }
@@ -89,8 +91,9 @@ START_TEST(test_router) {
 
   crystal_router(&cr);
 
-  fail_unless(cr.data.n == c.np * 4 + (c.np>>1), "(thrd: %d %d (exp: %d)\n", 
-	      MYTHREAD, cr.data.n, c.np * 4 * (c.np/2));
+  fail_unless(cr.data.n == cp->np * 4 + (cp->np>>1),
+	      "(thrd: %d %d (exp: %d)\n", 
+	      MYTHREAD, cr.data.n, cp->np * 4 * (cp->np/2));
   sum = 0;
   data = cr.data.ptr;
   end = data + cr.data.n;
@@ -100,7 +103,7 @@ START_TEST(test_router) {
     fail_unless(data[3] == data[1] * 2);
     fail_if(data[1]&1 && (data[2] != 2 || data[4] != data[3] + 1));
   }
-  fail_unless(sum == (c.np * (c.np - 1)>>1));
+  fail_unless(sum == (cp->np * (cp->np - 1)>>1));
 
   crystal_free(&cr);
 
