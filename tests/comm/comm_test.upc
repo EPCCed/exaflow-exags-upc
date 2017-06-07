@@ -107,7 +107,7 @@ START_TEST(test_free) {
 
   comm_init();
   comm_world(&cp);
-  cp_old = &cp;
+  cp_old = cp;
   comm_free(&cp);
   fail_unless(cp == NULL);
   comm_free(&cp);  
