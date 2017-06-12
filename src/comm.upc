@@ -222,7 +222,7 @@ void comm_free(comm_ptr *cpp)
     upc_barrier;
     if (cp->id == 0) {
       upc_free(cp->buf_dir);
-      upc_free(cp->flgs);
+      upc_free((shared void*)cp->flgs);
     }
     upc_barrier;
     cp->buf_dir = NULL;
@@ -604,7 +604,7 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
   }
 
   upc_barrier;
-  comm_allreduce(cp, dom, op, v, vn, red);  
+  comm_allreduce(cp, dom, op, (void*)v, vn, red);  
 #endif
 }
 
