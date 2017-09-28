@@ -12,6 +12,14 @@ AC_ARG_ENABLE(check, AC_HELP_STRING([--enable-check],
               [Compile with support for unit testing, requires libcheck]),
               [enable_check=${enableval}],[enable_check=no])
 
+AC_ARG_ENABLE(underscore, AC_HELP_STRING([--enable-underscore],
+	     [Underscore name mangling for the Fortran interface]),
+	     [enable_underscore=${enableval}],[enable_underscore=0])
+
+AC_ARG_ENABLE(naive-blas, AC_HELP_STRING([--enable-naive-blas],
+	     [Compile with naive blas]),
+	     [enable_naive_blas=${enableval}],[enable_naive_blas=yes])
+
 AC_PROG_CC
 AC_PROG_RANLIB
 AC_PROG_INSTALL
@@ -27,6 +35,16 @@ if test "x${enable_check}" = xyes; then
    else
       AC_MSG_ERROR([CHECK not found, needed for unit testing])
    fi
+fi
+
+CPPFLAGS="-DPREFIX=exags_ -DGLOBAL_LONG_LONG -DAMG_BLOCK_ROWS=2400 $CPPFLAGS"
+
+if test "x${enable_underscore}" = xyes; then
+   CPPFLAGS="-DUNDERSCORE $CPPFLAGS"
+fi
+
+if test "x${enable_naive_blas}" = xyes; then
+   CPPFLAGS="-DUSE_NAIVE_BLAS $CPPFLAGS"
 fi
 
 
@@ -48,7 +66,7 @@ Configuration of ExaGS ${PACKAGE_VERSION} finished.
 
 Prefix: '${prefix}'.
 Compiler: ${UPC} ${UPCFLAGS} ${CPPFLAGS}
-Libs: ${LD} ${LDFLAGS} ${LIBS}
+
 
 ---------------------------------------------------------
 "

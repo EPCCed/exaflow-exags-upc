@@ -7,14 +7,9 @@
 #include "types.h"
 #include "comm.h"
 
-#define nek_exitt FORTRAN_UNPREFIXED(exitt,EXITT)
 void die(int status)
 {
-#ifdef NO_NEK_EXITT
   if(comm_gbl_id==0) exit(status); else for(;;) ;
-#else
-  nek_exitt();
-#endif  
 }
 
 void vdiagnostic(const char *prefix, const char *file, unsigned line,
