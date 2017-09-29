@@ -764,7 +764,7 @@ static struct file dopen(const char *filename, const char mode,int *code)
     }
   } else {
     if(rfwrite(f.fptr, &magic,sizeof(double))){
-      fail("ERROR ",__FILE__,__LINE__,
+      fail(1,__FILE__,__LINE__,
 	   "AMG: could not write to %s",filename);
       *code=1;
       return f;
