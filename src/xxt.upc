@@ -338,16 +338,25 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
   
   init_sep_ids(data,dofa,xid);
 
+  comm_alloc(data->comm, 2*xn+2*size);
+
   if(nl) {
+
+    data->comm->flgs[MYTHREAD] = -1;
+    upc_barrier;  
+
     /* fan-in */
     p=xid, size=xn;
     for(lvl=0;lvl<nl;++lvl) {
       sint other = data->pother[lvl];
       if(other<0) {
-        comm_send(data->comm,p   ,size*sizeof(ulong),-other-1,size);
+	while(data->comm->flgs[-other-1] != (lvl-1)) ;
+	upc_memput(data->comm->buf_dir[-other-1], p, size*sizeof(ulong));
+	data->comm->flgs[-other-1] = -2;
       } else {
-        comm_recv(data->comm,recv,size*sizeof(ulong),other,size);
-        merge_sep_ids(data,p,recv,work,lvl+1,buf);
+	while(data->comm->flgs[MYTHREAD] != -2) ;
+        merge_sep_ids(data,p,(ulong *) data->comm->buf,work,lvl+1,buf);
+	data->comm->flgs[-other-1] = lvl;
       }
       ss=data->sep_size[lvl+1];
       if(ss>=size || lvl==nl-1) break;
@@ -356,10 +365,16 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
     /* fan-out */
     for(;;) {
       sint other = data->pother[lvl];
-      if(other<0)
-        comm_recv(data->comm,p,size*sizeof(ulong),-other-1,size);
-      else
-        comm_send(data->comm,p,size*sizeof(ulong),other,size);
+      if(other<0) {
+	while(data->comm->flgs[MYTHREAD] != -2) ;
+	memcpy(p, data->comm->buf, size*sizeof(ulong));
+	data->comm->flgs[MYTHREAD] = lvl - 1;
+      }
+      else {
+	while(data->comm->flgs[other] != lvl) ;
+	upc_memput(data->comm->buf_dir[other], p, size*sizeof(ulong));
+	data->comm->flgs[other] = -2;
+      }
       if(lvl==0) break;
       ss=data->sep_size[lvl];
       p-=ss, size+=ss, --lvl;
