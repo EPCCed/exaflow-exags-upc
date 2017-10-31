@@ -193,29 +193,45 @@ static void discover_sep_sizes(struct xxt *data,
 
   buffer_reserve(buf,2*ns*sizeof(float));
   v=buf->ptr, recv=v+ns;
+
+  comm_alloc(data->comm, 2*ns*sizeof(float));
+
     
   for(i=0;i<ns;++i) v[i]=0;
   for(j=0;j<n;++j) v[dof[j].level]+=1/(float)dof[j].count;
+
+  data->comm->flgs[MYTHREAD] = -1;
+  upc_barrier;  
 
   /* fan-in */
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     unsigned s = ns-(lvl+1);
     if(other<0) {
-      comm_send(data->comm,v   +lvl+1,s*sizeof(float),-other-1,s);
+      while(data->comm->flgs[-other-1] != (lvl-1)) ;
+      upc_memput(data->comm->buf_dir[-other-1], v+lvl+1, s*sizeof(float));
+      data->comm->flgs[-other-1] = -2;
     } else {
-      comm_recv(data->comm,recv+lvl+1,s*sizeof(float),other,s);
-      for(i=lvl+1;i<ns;++i) v[i]+=recv[i];
+      while(data->comm->flgs[MYTHREAD] != -2) ;      
+      for(i=lvl+1;i<ns;++i) v[i]+=data->comm->buf[i - (lvl + 1)];
+      data->comm->flgs[MYTHREAD] = lvl;
     }
   }
   /* fan-out */
   for(;lvl;) {
     sint other = data->pother[--lvl];
     unsigned s = ns-(lvl+1);
-    if(other<0)
-      comm_recv(data->comm,v+lvl+1,s*sizeof(float),-other-1,s);
-    else
-      comm_send(data->comm,v+lvl+1,s*sizeof(float),other,s);
+    if(other<0) {
+      while(data->comm->flgs[MYTHREAD] != -2) ;
+      recv = v+lvl+1;
+      for (i = 0; i < s; i++) recv[i] = data->comm->buf[i];
+      data->comm->flgs[MYTHREAD] = lvl;
+    }
+    else {
+      while(data->comm->flgs[other] != (lvl - 1)) ;
+      upc_memput(data->comm->buf_dir[other], v+lvl+1, s*sizeof(float));
+      data->comm->flgs[other] = -2;
+    }
   }
 
   data->xn=0;    
