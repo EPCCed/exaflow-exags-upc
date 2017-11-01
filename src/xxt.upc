@@ -397,16 +397,22 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
   
   if(n==0 || nl==0) return;
 
+  data->comm->flgs[MYTHREAD] = -1;
+  upc_barrier;  
+
   tag=tag*2+0;
   /* fan-in */
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     if(other<0) {
-      comm_send(data->comm,p   ,size*sizeof(double),-other-1,tag);
+      while(data->comm->flgs[-other-1] != (lvl-1)) ;
+      upc_memput(data->comm->buf_dir[-other-1], p, size*sizeof(double));
+      data->comm->flgs[-other-1] = -2;
     } else {
+      while(data->comm->flgs[MYTHREAD] != -2);
       uint i;
-      comm_recv(data->comm,recv,size*sizeof(double),other   ,tag);
-      for(i=0;i<size;++i) p[i]+=recv[i];
+      for(i=0;i<size;++i) p[i]+=data->comm->buf[i];
+      data->comm->flgs[MYTHREAD] = lvl;
     }
     ss=data->sep_size[lvl+1];
     if(ss>=size || lvl==nl-1) break;
@@ -416,16 +422,18 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
   for(;;) {
     sint other = data->pother[lvl];
     if(other<0) {
-      comm_recv (data->comm,p,size*sizeof(double),-other-1,tag);
+      while(data->comm->flgs[MYTHREAD] != -2) ;
+      memcpy(p, data->comm->buf, size*sizeof(double));
+      data->comm->flgs[MYTHREAD] = lvl - 1;	
     } else {
-      comm_isend(&data->req[nsend++],data->comm,
-                             p,size*sizeof(double),other   ,tag);
+      while(data->comm->flgs[other] != lvl) ;
+      upc_memput(data->comm->buf_dir[other], p, size*sizeof(double));
+      data->comm->flgs[other] = -2;
     }
     if(lvl==0) break;
     ss=data->sep_size[lvl];
     p-=ss, size+=ss, --lvl;
   }
-  if(nsend) comm_wait(data->req,nsend);
 }
 
 static double sum(struct xxt *data, double v, uint n, uint tag)
@@ -435,16 +443,23 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
   unsigned lvl,nsend=0;
   uint size=n, ss;
 
+  data->comm->flgs[MYTHREAD] = -1;
+  upc_barrier;  
+
   tag=tag*2+1;
   if(n==0 || nl==0) return v;
   /* fan-in */
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     if(other<0) {
-      comm_send(data->comm,&v,sizeof(double),-other-1,tag);
+      while(data->comm->flgs[-other-1] != (lvl - 1)) ;
+      upc_memput(data->comm->buf_dir[-other-1], &v, sizeof(double));
+      data->comm->flgs[-other-1] = -2;
     } else {
-      comm_recv(data->comm,&r,sizeof(double),other   ,tag);
-      v+=r;
+      while(data->comm->flgs[MYTHREAD] != -2) ;
+      v+=data->comm->buf[0];
+      data->comm->flgs[MYTHREAD] = lvl;
+
     }
     ss=data->sep_size[lvl+1];
     if(ss>=size || lvl==nl-1) break;
@@ -454,16 +469,19 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
   for(;;) {
     sint other = data->pother[lvl];
     if(other<0) {
-      comm_recv (data->comm,&v,sizeof(double),-other-1,tag);
+      while(data->comm->flgs[MYTHREAD] != -2) ;
+      v = data->comm->buf[0];
+      data->comm->flgs[MYTHREAD] = lvl - 1;
     } else {
-      comm_isend(&data->req[nsend++],data->comm,
-                             &v,sizeof(double),other   ,tag);
+      while(data->comm->flgs[other] != lvl) ;
+      upc_memput(data->comm->buf_dir[other], &v, sizeof(double));
+      data->comm->flgs[other] = lvl - 1;
     }
     if(lvl==0) break;
     ss=data->sep_size[lvl];
     size+=ss, --lvl;
   }
-  if(nsend) comm_wait(data->req,nsend);
+
   return v;
 }
 
