@@ -54,7 +54,8 @@ AC_CONFIG_FILES([exags.pc\
 		 tests/Makefile\
 		 tests/comm/Makefile\
 		 tests/crystal/Makefile\
-		 tests/gs/Makefile])
+		 tests/gs/Makefile\
+		 tests/xxt/Makefile])
 AC_OUTPUT
 
 # Display help text
