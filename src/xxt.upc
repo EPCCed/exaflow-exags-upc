@@ -421,6 +421,9 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
     if(ss>=size || lvl==nl-1) break;
     p+=ss, size-=ss;
   }
+
+  data->comm->flgs[MYTHREAD] = lvl;
+
   /* fan-out */
   for(;;) {
     sint other = data->pother[lvl];
@@ -468,6 +471,9 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
     if(ss>=size || lvl==nl-1) break;
     size-=ss;
   }
+
+  data->comm->flgs[MYTHREAD] = lvl;
+
   /* fan-out */
   for(;;) {
     sint other = data->pother[lvl];
@@ -478,7 +484,7 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
     } else {
       while(data->comm->flgs[other] != lvl) ;
       upc_memput(data->comm->buf_dir[other], &v, sizeof(double));
-      data->comm->flgs[other] = lvl - 1;
+      data->comm->flgs[other] = -2;
     }
     if(lvl==0) break;
     ss=data->sep_size[lvl];
