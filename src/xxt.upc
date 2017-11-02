@@ -212,8 +212,9 @@ static void discover_sep_sizes(struct xxt *data,
       upc_memput(data->comm->buf_dir[-other-1], v+lvl+1, s*sizeof(float));
       data->comm->flgs[-other-1] = -2;
     } else {
-      while(data->comm->flgs[MYTHREAD] != -2) ;      
-      for(i=lvl+1;i<ns;++i) v[i]+=data->comm->buf[i - (lvl + 1)];
+      while(data->comm->flgs[MYTHREAD] != -2) ;   
+      memcpy(recv+lvl+1, data->comm->buf, s*sizeof(float));
+      for(i=lvl+1;i<ns;++i) v[i]+=recv[i];
       data->comm->flgs[MYTHREAD] = lvl;
     }
   }
@@ -223,8 +224,7 @@ static void discover_sep_sizes(struct xxt *data,
     unsigned s = ns-(lvl+1);
     if(other<0) {
       while(data->comm->flgs[MYTHREAD] != -2) ;
-      recv = v+lvl+1;
-      for (i = 0; i < s; i++) recv[i] = data->comm->buf[i];
+      memcpy(v+lvl+1, data->comm->buf, s*sizeof(float));
       data->comm->flgs[MYTHREAD] = lvl;
     }
     else {
@@ -356,12 +356,15 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
       } else {
 	while(data->comm->flgs[MYTHREAD] != -2) ;
         merge_sep_ids(data,p,(ulong *) data->comm->buf,work,lvl+1,buf);
-	data->comm->flgs[-other-1] = lvl;
+	data->comm->flgs[MYTHREAD] = lvl;
       }
       ss=data->sep_size[lvl+1];
       if(ss>=size || lvl==nl-1) break;
       p+=ss, size-=ss;
     }
+
+    data->comm->flgs[MYTHREAD] = lvl;
+
     /* fan-out */
     for(;;) {
       sint other = data->pother[lvl];
