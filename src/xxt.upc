@@ -463,7 +463,8 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
       data->comm->flgs[-other-1] = -2;
     } else {
       while(data->comm->flgs[MYTHREAD] != -2) ;
-      v+=data->comm->buf[0];
+      memcpy(&r, data->comm->buf, sizeof(double));
+      v+=r;
       data->comm->flgs[MYTHREAD] = lvl;
 
     }
@@ -479,7 +480,7 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
     sint other = data->pother[lvl];
     if(other<0) {
       while(data->comm->flgs[MYTHREAD] != -2) ;
-      v = data->comm->buf[0];
+      memcpy(&v, data->comm->buf, sizeof(double));
       data->comm->flgs[MYTHREAD] = lvl - 1;
     } else {
       while(data->comm->flgs[other] != lvl) ;
