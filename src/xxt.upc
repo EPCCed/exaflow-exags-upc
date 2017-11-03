@@ -413,8 +413,9 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
       data->comm->flgs[-other-1] = -2;
     } else {
       while(data->comm->flgs[MYTHREAD] != -2);
+      memcpy(recv, data->comm->buf, size * sizeof(double));
       uint i;
-      for(i=0;i<size;++i) p[i]+=data->comm->buf[i];
+      for(i=0;i<size;++i) p[i]+=recv[i];
       data->comm->flgs[MYTHREAD] = lvl;
     }
     ss=data->sep_size[lvl+1];
