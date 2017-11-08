@@ -12,4 +12,4 @@ lib_LIBRARIES = libexags.a
 libexags_a_SOURCES = sort.c fail.upc comm.upc tensor.c gs_local.c\
 	sarray_sort.c crystal.upc sarray_transfer.upc gs.upc amg.upc sparse_cholesky.c\
 	xxt.upc fcrs.upc fcrystal.upc findpts.upc findpts_el_2.c findpts_el_3.c\
-	findpts_local.c obbox.c poly.c
+	findpts_local.c lob_bnd.c obbox.c poly.c
