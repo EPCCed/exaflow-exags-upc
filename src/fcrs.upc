@@ -73,7 +73,7 @@ void fcrs_setup(sint *handle, const sint *sid, const int *comm, const sint *np, 
                                                   *null_space,c); break;
   }
 
-  //  comm_free(&c);
+  comm_free(&c);
   *handle = handle_n++;
 }
 
