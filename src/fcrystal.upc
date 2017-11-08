@@ -92,11 +92,17 @@ void fcrystal_setup(sint *handle, const int comm, const sint *np) /* Badness... 
     handle_max+=handle_max/2+1,
     handle_array=trealloc(struct crystal*,handle_array,handle_max);
   handle_array[handle_n]=p=tmalloc(struct crystal,1);
-  // FIXME: setup comm properly
-  //  comm_init_check(&p->comm, *comm, *np);
+  comm_init();
+  comm_world(&(p->comm));
   buffer_init(&p->data,1000);
   buffer_init(&p->work,1000);
   *handle = handle_n++;
+#ifdef HAVE_MPI
+
+#elif __UPC__
+  comm_alloc(p->comm, 1000 * sizeof(uint));
+  p->size = upc_all_alloc(THREADS, sizeof(uint));
+#endif
 }
 
 #define CHECK_HANDLE(func) do \

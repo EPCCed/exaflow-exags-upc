@@ -53,22 +53,24 @@ void fcrs_setup(sint *handle, const sint *sid, const int *comm, const sint *np, 
                 const sint Ai[], const sint Aj[], const double A[],
                 const sint *null_space)
 {
-  struct comm c;
+  comm_ptr c;
   if(handle_n==handle_max)
     handle_max+=handle_max/2+1,
     handle_array=trealloc(struct crs_data*,handle_array,handle_max),
     sid_array=trealloc(int,sid_array,handle_max);
-  //  comm_init_check(&c, *comm, *np);
-  // FIXME: setup comm properly
+
+  comm_init();
+  comm_world(&c);
+
   sid_array[handle_n]=*sid;
 
   switch(sid_array[handle_n]) {
     case 0: handle_array[handle_n]=ccrs_xxt_setup(*n,(const ulong*)id,
                                                   *nz,(const uint*)Ai,(const uint*)Aj,A,
-                                                  *null_space,&c); break;
+                                                  *null_space,c); break;
     case 1: handle_array[handle_n]=ccrs_amg_setup(*n,(const ulong*)id,
                                                   *nz,(const uint*)Ai,(const uint*)Aj,A,
-                                                  *null_space,&c); break;
+                                                  *null_space,c); break;
   }
 
   //  comm_free(&c);
