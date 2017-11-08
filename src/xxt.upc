@@ -338,7 +338,7 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
   
   init_sep_ids(data,dofa,xid);
 
-  comm_alloc(data->comm, 2*xn+2*size);
+  comm_alloc(data->comm, 1000 * THREADS * 2*xn+2*size);
 
   if(nl) {
 

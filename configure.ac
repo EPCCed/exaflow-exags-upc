@@ -37,7 +37,7 @@ if test "x${enable_check}" = xyes; then
    fi
 fi
 
-CPPFLAGS="-DPREFIX=exags_ -DGLOBAL_LONG_LONG -DAMG_BLOCK_ROWS=2400 $CPPFLAGS"
+CPPFLAGS="-DPREFIX=gslib_ -DFPREFIX=fgslib_ -DGLOBAL_LONG_LONG -DAMG_BLOCK_ROWS=2400 $CPPFLAGS"
 
 if test "x${enable_underscore}" = xyes; then
    CPPFLAGS="-DUNDERSCORE $CPPFLAGS"

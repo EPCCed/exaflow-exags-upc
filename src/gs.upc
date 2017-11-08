@@ -872,7 +872,7 @@ static struct cr_data *cr_setup_aux(
   /* default behavior: send only locally unflagged data */
   
   *mem_size += cr_schedule(crd,comm);
-  comm_alloc(comm, THREADS * (*mem_size)); /* Too much? */
+  comm_alloc(comm, 1000 * THREADS * (*mem_size)); /* Too much? */
   sarray_sort(struct shared_id,sh->ptr,sh->n, i,0, buf);
   crl_work_init(&cw,sh, FLAGS_LOCAL , comm->id);
   size_max[0]=cr_learn(&cw,crd->stage[0],comm,buf, mem_size);

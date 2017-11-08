@@ -56,7 +56,7 @@ void crystal_init(struct crystal *cr, const comm_ptr comm)
 #ifdef HAVE_MPI
 
 #elif __UPC__
-  comm_alloc(cr->comm, 1000 * sizeof(uint));
+  comm_alloc(cr->comm, THREADS * 1000 * sizeof(uint));
   cr->size = upc_all_alloc(THREADS, sizeof(uint));
 #endif
 }
