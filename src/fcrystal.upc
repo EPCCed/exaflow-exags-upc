@@ -85,7 +85,7 @@ static int handle_max = 0;
 static int handle_n = 0;
 
 //void fcrystal_setup(sint *handle, const MPI_Fint *comm, const sint *np)
-void fcrystal_setup(sint *handle, const int comm, const sint *np) /* Badness... */
+void fcrystal_setup(sint *handle, const int *comm, const sint *np) /* Badness... */
 {
   struct crystal *p;
   if(handle_n==handle_max)

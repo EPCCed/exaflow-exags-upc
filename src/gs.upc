@@ -1250,7 +1250,7 @@ static int fgs_max = 0;
 static int fgs_n = 0;
 
 void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
-                    const comm_ptr *comm, const sint *np, const sint *method)
+                    const int *comm, const sint *np, const sint *method)
 {
   struct gs_data *gsh;
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
@@ -1262,7 +1262,7 @@ void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
 }
 
 void fgs_setup(sint *handle, const slong id[], const sint *n,
-               const comm_ptr *comm, const sint *np)
+               const int *comm, const sint *np)
 {
   struct gs_data *gsh;
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
