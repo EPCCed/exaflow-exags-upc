@@ -40,6 +40,29 @@ void teardown() {
 #endif
 }
 
+START_TEST(test_setup_pairwise) {
+  comm_ptr cp;
+  struct gs_data *gsh;
+
+  comm_init();
+  comm_world(&cp);
+
+  const uint np = cp->np;
+  slong *id = tmalloc(slong,np+4);
+  double *v = tmalloc(double,np+4);
+  uint i;
+  id[0] = -(slong)(np+10+3*cp->id);
+  for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
+
+  gsh = gs_setup(id,np+4,cp,0,gs_pairwise,1);
+  free(id);
+  gs_free(gsh);
+
+} END_TEST
+
 START_TEST(test_setup_crystal) {
   comm_ptr cp;
   struct gs_data *gsh;
@@ -108,6 +131,37 @@ START_TEST(test_setup_auto) {
   free(id);
   gs_free(gsh);
 
+} END_TEST
+
+START_TEST(test_gs_pairwise) {
+  comm_ptr cp;
+  struct gs_data *gsh;
+
+  comm_init();
+  comm_world(&cp);
+
+  const uint np = cp->np;
+  slong *id = tmalloc(slong,np+4);
+  double *v = tmalloc(double,np+4);
+  uint i;
+  id[0] = -(slong)(np+10+3*cp->id);
+  for(i=0;i<np;++i) id[i+1] = -(sint)(i+1);
+  id[np+1] = cp->id+1;
+  id[np+2] = cp->id+1;
+  id[np+3] = np-cp->id;
+
+  gsh = gs_setup(id,np+4,cp,0,gs_pairwise,1);
+  free(id);
+  
+  for(i=0;i<np+4;++i) v[i] = 1;
+  gs(v,gs_double,gs_add,0,gsh,0);
+  fail_unless(v[np+3] == 3);
+
+  for(i=0;i<np+4;++i) v[i] = 1;
+  gs(v,gs_double,gs_add,1,gsh,0);
+  fail_unless(v[np+3] == np + 3);
+
+  gs_free(gsh);
 } END_TEST
 
 START_TEST(test_gs_crystal_router) {
@@ -209,6 +263,10 @@ Suite *comm_suite() {
   
   s = suite_create("gs");
 
+  tc = tcase_create("gs_setup_pairwise");
+  tcase_add_test(tc, test_setup_pairwise);
+  suite_add_tcase(s, tc);
+
   tc = tcase_create("gs_setup_crystal");
   tcase_add_test(tc, test_setup_crystal);
   suite_add_tcase(s, tc);
@@ -219,6 +277,10 @@ Suite *comm_suite() {
 
   tc = tcase_create("gs_setup_auto");
   tcase_add_test(tc, test_setup_auto);
+  suite_add_tcase(s, tc);
+
+  tc = tcase_create("gs_pairwise");
+  tcase_add_test(tc, test_gs_pairwise);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_crystal_router");
