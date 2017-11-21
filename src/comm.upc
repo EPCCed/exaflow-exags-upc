@@ -141,6 +141,38 @@ int comm_alloc(comm_ptr cp, size_t n)
 #endif
 }
 
+int comm_alloc_thrd_buf(comm_ptr cp, size_t n)
+{
+#ifdef __UPC__
+  int id = cp->id;
+  int np = cp->np;
+  int i;
+
+  // Sanitise inputs based on what's in cp's members
+  if (n <= 0) {
+    return 0;
+  }
+  
+  if (cp->thrd_buf_len > 0 && cp->thrd_buf_len >= n) {
+    return 0;
+  }
+
+  // If buf_dir is empty, allocate space for np pointers-to-shared-chars
+  if (cp->thrds_dir == NULL) {
+    cp->thrds_dir = upc_all_alloc(np, sizeof(shared thrds_buf *shared));
+    cp->thrds_dir[id] = upc_alloc(np * sizeof(thrds_buf));
+    upc_barrier;
+    cp->thrd_buf = (thrds_buf *) &cp->thrds_dir[id][0];
+    for (i = 0; i < np; i++)
+      cp->thrd_buf[i] = (shared[] char *) upc_alloc(n);
+    upc_barrier;
+    cp->thrd_buf_len = n;
+  }
+
+  return 0;
+#endif
+}
+
 
 
 // Manufacture a UPC equivalent of comm_world if UPC
@@ -166,6 +198,8 @@ void comm_world(comm_ptr *cpp)
     cp->buf_dir = NULL;
     cp->buf = NULL;
     cp->flgs = NULL;
+    cp->thrds_dir = NULL;
+    cp->thrd_buf_len = 0;
 #else
     cp->h = 0;
     cp->np = 0;
@@ -198,6 +232,8 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->buf_dir = NULL;
     cpd->buf = NULL;
     cpd->flgs = NULL;
+    cpd->thrds_dir = NULL;
+    cpd->thrd_buf_len = 0;
 #endif
 
     *cpp = cpd;

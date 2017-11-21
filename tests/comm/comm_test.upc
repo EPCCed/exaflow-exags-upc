@@ -100,6 +100,27 @@ START_TEST(test_alloc) {
 #endif
 } END_TEST
 
+START_TEST(test_alloc_thrd_buf) {
+ comm_ptr cp;
+ int i, j;
+ int data[10];
+
+  comm_init();
+
+  comm_world(&cp);
+#ifdef __UPC__
+
+  memset(data, cp->id, 10 * sizeof(int));
+  comm_alloc_thrd_buf(cp, 10 * sizeof(int));
+  for (i = 0; i < cp->np; i++)
+    upc_memput(cp->thrds_dir[i][cp->id], data, 10 * sizeof(int));
+  upc_barrier;
+  for (i = 0; i < cp->np; i++)
+    for (j = 0; j < 10; j++)
+      fail_unless(cp->thrd_buf[i][j] == i);
+#endif
+} END_TEST
+
 
 START_TEST(test_free) {
   comm_ptr cp;
@@ -262,6 +283,10 @@ Suite *comm_suite() {
 
   tc = tcase_create("comm_alloc");
   tcase_add_test(tc, test_alloc);
+  suite_add_tcase(s, tc);
+
+  tc = tcase_create("comm_alloc_thrd_buf");
+  tcase_add_test(tc, test_alloc_thrd_buf);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("comm_free");

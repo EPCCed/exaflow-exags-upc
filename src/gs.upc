@@ -392,11 +392,6 @@ typedef void setup_fun(struct gs_remote *r, struct gs_topology *top,
   Pairwise Execution
 ------------------------------------------------------------------------------*/
 
-
-#ifdef __UPC__
-typedef shared[] char *shm_buf;
-#endif
-
 struct pw_comm_data {
   uint n;      /* number of messages */
   uint *p;     /* message source/dest proc */
@@ -409,18 +404,15 @@ struct pw_data {
   const uint *map[2];
   uint buffer_size;
 
-#ifdef __UPC__
-  shared[] shm_buf *shared *shm_dir;
-  shm_buf *thrd_buf;
-#else
+#ifndef __UPC__
   comm_req *req;
 #endif
 
 };
 
 #ifdef __UPC__
-void pw_exec_recvs(char *buf, const unsigned unit_size,
-		   const struct pw_comm_data *c, shm_buf *thrd_buf)
+void pw_exec_recvs(char *buf, const unsigned unit_size, 
+		   const struct pw_comm_data *c, thrds_buf *thrd_buf)
 {
   const uint *p, *pe, *size=c->size;
   for(p=c->p,pe=p+c->n;p!=pe;++p) {
@@ -431,13 +423,12 @@ void pw_exec_recvs(char *buf, const unsigned unit_size,
 }
 
 void pw_exec_sends(char *buf, const unsigned unit_size,
-		   const struct pw_comm_data *c,
-		   shared[] shm_buf *shared *shm_dir)
+		   const comm_ptr comm, const struct pw_comm_data *c)
 {
   const uint *p, *pe, *size=c->size, put_flg = 1;
   for(p=c->p,pe=p+c->n;p!=pe;++p) {
     size_t len = *(size++)*unit_size;
-    upc_memput(shm_dir[*p][MYTHREAD], buf, len);
+    upc_memput(comm->thrds_dir[*p][MYTHREAD], buf, len);
     buf += len;
   }
 }
@@ -487,19 +478,19 @@ static void pw_exec(
 
 
 #ifdef __UPC__
-
+  comm_alloc_thrd_buf(comm, unit_size);
   upc_barrier;
 
   /* fill send buffer */
   scatter_to_buf[mode](buf,data,vn,pwd->map[send],dom);
 
   /* post sends */
-  pw_exec_sends(buf,unit_size,&pwd->comm[send], pwd->shm_dir);
+  pw_exec_sends(buf,unit_size,comm,&pwd->comm[send]);
 
   upc_barrier;
 
   /* process receive bufer */
-  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],pwd->thrd_buf);
+  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],comm->thrd_buf);
 #else
   /* post receives */
   sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
@@ -616,16 +607,6 @@ static void pw_setup(struct gs_remote *r, struct gs_topology *top,
 {
   int i;
   struct pw_data *pwd = pw_setup_aux(&top->sh,buf, &r->mem_size);
-
-#ifdef __UPC__
-  pwd->shm_dir = upc_all_alloc(THREADS, sizeof(shared shm_buf *shared));
-  pwd->shm_dir[MYTHREAD] = upc_alloc(THREADS * sizeof(shm_buf));
-  upc_barrier;
-  pwd->thrd_buf = (shm_buf *) &pwd->shm_dir[MYTHREAD][0];
-  for (i = 0; i < THREADS; i++)
-    pwd->thrd_buf[i] = (shared[] char *) upc_alloc(1000 * sizeof(char));
-  upc_barrier;
-#endif
   r->buffer_size = pwd->buffer_size;
   r->data = pwd;
   r->exec = (exec_fun*)&pw_exec;
