@@ -478,7 +478,7 @@ static void pw_exec(
 
 
 #ifdef __UPC__
-  comm_alloc_thrd_buf(comm, unit_size);
+  comm_alloc_thrd_buf(comm, pwd->comm[recv].total * unit_size);
   upc_barrier;
 
   /* fill send buffer */
