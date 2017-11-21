@@ -391,6 +391,12 @@ typedef void setup_fun(struct gs_remote *r, struct gs_topology *top,
 /*------------------------------------------------------------------------------
   Pairwise Execution
 ------------------------------------------------------------------------------*/
+
+
+#ifdef __UPC__
+typedef shared[] char *shm_buf;
+#endif
+
 struct pw_comm_data {
   uint n;      /* number of messages */
   uint *p;     /* message source/dest proc */
@@ -401,9 +407,42 @@ struct pw_comm_data {
 struct pw_data {
   struct pw_comm_data comm[2];
   const uint *map[2];
-  comm_req *req;
   uint buffer_size;
+
+#ifdef __UPC__
+  shared[] shm_buf *shared *shm_dir;
+  shm_buf *thrd_buf;
+#else
+  comm_req *req;
+#endif
+
 };
+
+#ifdef __UPC__
+void pw_exec_recvs(char *buf, const unsigned unit_size,
+		   const struct pw_comm_data *c, shm_buf *thrd_buf)
+{
+  const uint *p, *pe, *size=c->size;
+  for(p=c->p,pe=p+c->n;p!=pe;++p) {
+    size_t len = *(size++)*unit_size;
+    upc_memget(buf, thrd_buf[*p], len);
+    buf += len;
+  }
+}
+
+void pw_exec_sends(char *buf, const unsigned unit_size,
+		   const struct pw_comm_data *c,
+		   shared[] shm_buf *shared *shm_dir)
+{
+  const uint *p, *pe, *size=c->size, put_flg = 1;
+  for(p=c->p,pe=p+c->n;p!=pe;++p) {
+    size_t len = *(size++)*unit_size;
+    upc_memput(shm_dir[*p][MYTHREAD], buf, len);
+    buf += len;
+  }
+}
+
+#else
 
 static char *pw_exec_recvs(char *buf, const unsigned unit_size,
                            const comm_ptr comm,
@@ -430,6 +469,7 @@ static char *pw_exec_sends(char *buf, const unsigned unit_size,
   }
   return buf;
 }
+#endif
 
 static void pw_exec(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
@@ -443,6 +483,24 @@ static void pw_exec(
   const unsigned recv = 0^transpose, send = 1^transpose;
   unsigned unit_size = vn*gs_dom_size[dom];
   char *sendbuf;
+  int i;
+
+
+#ifdef __UPC__
+
+  upc_barrier;
+
+  /* fill send buffer */
+  scatter_to_buf[mode](buf,data,vn,pwd->map[send],dom);
+
+  /* post sends */
+  pw_exec_sends(buf,unit_size,&pwd->comm[send], pwd->shm_dir);
+
+  upc_barrier;
+
+  /* process receive bufer */
+  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],pwd->thrd_buf);
+#else
   /* post receives */
   sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
   /* fill send buffer */
@@ -451,7 +509,8 @@ static void pw_exec(
   pw_exec_sends(sendbuf,unit_size,comm,&pwd->comm[send],
                 &pwd->req[pwd->comm[recv].n]);
   comm_wait(pwd->req,pwd->comm[0].n+pwd->comm[1].n);
-  /* gather using recv buffer */
+#endif 
+ /* gather using recv buffer */
   gather_from_buf[mode](data,buf,vn,pwd->map[recv],dom,op);
 }
 
@@ -532,8 +591,10 @@ static struct pw_data *pw_setup_aux(struct array *sh, buffer *buf,
   *mem_size+=pw_comm_setup(&pwd->comm[1],sh, FLAGS_LOCAL, buf);
   pwd->map[1] = pw_map_setup(sh, buf, mem_size);
 
+#ifndef __UPC__
   pwd->req = tmalloc(comm_req,pwd->comm[0].n+pwd->comm[1].n);
   *mem_size += (pwd->comm[0].n+pwd->comm[1].n)*sizeof(comm_req);
+#endif
   pwd->buffer_size = pwd->comm[0].total + pwd->comm[1].total;
   return pwd;
 }
@@ -544,14 +605,27 @@ static void pw_free(struct pw_data *data)
   pw_comm_free(&data->comm[1]);
   free((uint*)data->map[0]);
   free((uint*)data->map[1]);
+#ifndef __UPC__
   free(data->req);
+#endif
   free(data);
 }
 
 static void pw_setup(struct gs_remote *r, struct gs_topology *top,
                      const comm_ptr comm, buffer *buf)
 {
+  int i;
   struct pw_data *pwd = pw_setup_aux(&top->sh,buf, &r->mem_size);
+
+#ifdef __UPC__
+  pwd->shm_dir = upc_all_alloc(THREADS, sizeof(shared shm_buf *shared));
+  pwd->shm_dir[MYTHREAD] = upc_alloc(THREADS * sizeof(shm_buf));
+  upc_barrier;
+  pwd->thrd_buf = (shm_buf *) &pwd->shm_dir[MYTHREAD][0];
+  for (i = 0; i < THREADS; i++)
+    pwd->thrd_buf[i] = (shared[] char *) upc_alloc(1000 * sizeof(char));
+  upc_barrier;
+#endif
   r->buffer_size = pwd->buffer_size;
   r->data = pwd;
   r->exec = (exec_fun*)&pw_exec;
@@ -1034,18 +1108,11 @@ static void dry_run_time(double times[3], const struct gs_remote *r,
 static void auto_setup(struct gs_remote *r, struct gs_topology *top,
                        const comm_ptr comm, buffer *buf)
 {
-#ifdef __UPC__
-  cr_setup(r, top,comm,buf);  
-#else
+
   pw_setup(r, top,comm,buf);
-#endif
   
   if(comm->np>1) {
-#ifdef __UPC__
-    const char *name = "crystal router";
-#else
     const char *name = "pairwise";
-#endif
     struct gs_remote r_alt;
     double time[2][3];
 
@@ -1065,14 +1132,11 @@ static void auto_setup(struct gs_remote *r, struct gs_topology *top,
         r_alt.fin(r_alt.data); \
     } while(0)
 
-#ifdef __UPC__
-    DRY_RUN(0, r, "crystal router times (avg, min, max)");
-#else
+
     DRY_RUN(0, r, "pairwise times (avg, min, max)");
 
     cr_setup(&r_alt, top,comm,buf);
     DRY_RUN_CHECK(      "crystal router                ", "crystal router");
-#endif
     
     if(top->total_shared<100000) {
       allreduce_setup(&r_alt, top,comm,buf);
