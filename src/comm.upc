@@ -163,11 +163,18 @@ int comm_alloc_thrd_buf(comm_ptr cp, size_t n)
     cp->thrds_dir[id] = upc_alloc(np * sizeof(thrds_buf));
     upc_barrier;
     cp->thrd_buf = (thrds_buf *) &cp->thrds_dir[id][0];
-    for (i = 0; i < np; i++)
-      cp->thrd_buf[i] = (shared[] char *) upc_alloc(n);
-    upc_barrier;
-    cp->thrd_buf_len = n;
   }
+  
+  if (cp->thrd_buf_len > 0) {
+    for (i = 0; i < np; i++) 
+      upc_free(cp->thrd_buf[i]);
+  }
+
+  for (i = 0; i < np; i++) 
+    cp->thrd_buf[i] = (shared[] char *) upc_alloc(n);
+  upc_barrier;
+  cp->thrd_buf_len = n;
+
 
   return 0;
 #endif
