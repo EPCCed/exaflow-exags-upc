@@ -61,10 +61,16 @@
          
 */
 
+/* Ugly hack for Cray C which always defines UPC even without -hupc */
+#if defined(MPI) && defined(_CRAYC)
+#undef __UPC__
+#endif
+
 typedef struct comm * comm_ptr;
 
 #ifdef __UPC__
 typedef shared[] char *thrds_buf;
+typedef shared[] int volatile *flgs_buf;
 #endif
 
 #ifdef MPI
@@ -137,8 +143,10 @@ struct comm {
   shared[] char *shared *buf_dir; /* Global directory of buffers */
   shared[] thrds_buf *shared *thrds_dir; /* Global directory of thread buffers */
   shared strict int volatile *flgs;
+  shared[] flgs_buf *shared *flgs_dir;
   char *buf;			  /* Local part of buffers */
   thrds_buf *thrd_buf;		  /* Local part of thread buffers */
+  flgs_buf *flg_buf;
   size_t buf_len;		  /* Shared buffer size */
   size_t thrd_buf_len;		  /* Shared thread buffer size */
 #endif
@@ -161,7 +169,7 @@ void comm_world(comm_ptr *cpp);
 void comm_dup(comm_ptr *cpp, const comm_ptr cp);
 #ifdef __UPC__
 int comm_alloc(comm_ptr cp, size_t n);
-int comm_alloc_thrd_buf(comm_ptr cp, size_t n);
+int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs);
 #endif
 void comm_free(comm_ptr *cpp);
 

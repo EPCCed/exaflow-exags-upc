@@ -141,12 +141,14 @@ int comm_alloc(comm_ptr cp, size_t n)
 #endif
 }
 
-int comm_alloc_thrd_buf(comm_ptr cp, size_t n)
+int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs)
 {
-#ifdef __UPC__
+#ifdef MPI
+  return 0;
+#elif __UPC__
   int id = cp->id;
   int np = cp->np;
-  int i;
+  int i, j;
 
   // Sanitise inputs based on what's in cp's members
   if (n <= 0) {
@@ -164,19 +166,30 @@ int comm_alloc_thrd_buf(comm_ptr cp, size_t n)
     upc_barrier;
     cp->thrd_buf = (thrds_buf *) &cp->thrds_dir[id][0];
   }
+
+  if (cp->flgs_dir == NULL) {
+    cp->flgs_dir = upc_all_alloc(np, sizeof(shared flgs_buf *shared));
+    cp->flgs_dir[id] = upc_alloc(np * sizeof(flgs_buf));
+    upc_barrier;
+    cp->flg_buf = (flgs_buf *) &cp->flgs_dir[id][0];
+  }
   
   if (cp->thrd_buf_len > 0) {
     for (i = 0; i < np; i++) 
       upc_free(cp->thrd_buf[i]);
   }
 
-  for (i = 0; i < np; i++) 
+  for (i = 0; i < np; i++) {
     cp->thrd_buf[i] = (shared[] char *) upc_alloc(n);
+    cp->flg_buf[i] = (shared[] int *) upc_alloc(n_flgs * sizeof(int));
+    for (j = 0; j < n_flgs; j++) 
+      cp->flg_buf[i][j] = 0;
+  }
   upc_barrier;
   cp->thrd_buf_len = n;
 
 
-  return 0;
+  return 1;
 #endif
 }
 

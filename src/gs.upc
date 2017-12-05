@@ -412,23 +412,28 @@ struct pw_data {
 
 #ifdef __UPC__
 void pw_exec_recvs(char *buf, const unsigned unit_size, 
-		   const struct pw_comm_data *c, thrds_buf *thrd_buf)
+		   const struct pw_comm_data *c, 
+		   thrds_buf *thrd_buf, flgs_buf *flg_buf)
 {
   const uint *p, *pe, *size=c->size;
   for(p=c->p,pe=p+c->n;p!=pe;++p) {
     size_t len = *(size++)*unit_size;
+    while(flg_buf[*p][0] != -1) ;
     upc_memget(buf, thrd_buf[*p], len);
     buf += len;
+    flg_buf[*p][0] = 0;
   }
 }
 
 void pw_exec_sends(char *buf, const unsigned unit_size,
 		   const comm_ptr comm, const struct pw_comm_data *c)
 {
-  const uint *p, *pe, *size=c->size, put_flg = 1;
+  const uint *p, *pe, *size=c->size;
   for(p=c->p,pe=p+c->n;p!=pe;++p) {
     size_t len = *(size++)*unit_size;
+    while(comm->flgs_dir[*p][MYTHREAD][0] != 0) ;
     upc_memput(comm->thrds_dir[*p][MYTHREAD], buf, len);
+    comm->flgs_dir[*p][MYTHREAD][0] = -1;
     buf += len;
   }
 }
@@ -472,14 +477,15 @@ static void pw_exec(
   static gs_gather_fun *const gather_from_buf[] =
     { &gs_gather, &gs_gather_vec, &gs_gather_vec_to_many, &gather_noop };
   const unsigned recv = 0^transpose, send = 1^transpose;
+  const int n_flgs = 1;
   unsigned unit_size = vn*gs_dom_size[dom];
   char *sendbuf;
-  int i;
+  int i, j;
 
 
 #ifdef __UPC__
-  comm_alloc_thrd_buf(comm, pwd->comm[recv].total * unit_size);
-  upc_barrier;
+
+  comm_alloc_thrd_buf(comm, pwd->comm[recv].total * unit_size, n_flgs);
 
   /* fill send buffer */
   scatter_to_buf[mode](buf,data,vn,pwd->map[send],dom);
@@ -487,10 +493,8 @@ static void pw_exec(
   /* post sends */
   pw_exec_sends(buf,unit_size,comm,&pwd->comm[send]);
 
-  upc_barrier;
-
   /* process receive bufer */
-  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],comm->thrd_buf);
+  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],comm->thrd_buf, comm->flg_buf);
 #else
   /* post receives */
   sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
@@ -927,7 +931,9 @@ static struct cr_data *cr_setup_aux(
   /* default behavior: send only locally unflagged data */
 
   *mem_size += cr_schedule(crd,comm);
-  comm_alloc(comm, 1000 * THREADS * (*mem_size)); /* Too much? */
+#ifdef __UPC__
+  comm_alloc(comm, 10 * THREADS * (*mem_size)); /* Too much? */
+#endif
   sarray_sort(struct shared_id,sh->ptr,sh->n, i,0, buf);
   crl_work_init(&cw,sh, FLAGS_LOCAL , comm->id);
   size_max[0]=cr_learn(&cw,crd->stage[0],comm,buf, mem_size);
