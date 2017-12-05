@@ -111,7 +111,7 @@ START_TEST(test_alloc_thrd_buf) {
 #ifdef __UPC__
 
   memset(data, cp->id, 10 * sizeof(int));
-  comm_alloc_thrd_buf(cp, 10 * sizeof(int));
+  comm_alloc_thrd_buf(cp, 10 * sizeof(int), 1);
   for (i = 0; i < cp->np; i++)
     upc_memput(cp->thrds_dir[i][cp->id], data, 10 * sizeof(int));
   upc_barrier;
