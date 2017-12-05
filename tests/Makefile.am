@@ -1,4 +1,4 @@
-SUBDIRS = comm crystal gs
+SUBDIRS = comm crystal gs xxt
 TESTS = comm/comm_test1\
 	comm/comm_test2\
 	comm/comm_test3\
@@ -15,6 +15,10 @@ TESTS = comm/comm_test1\
 	gs/gs_test2\
 	gs/gs_test4\
 	gs/gs_test8\
-	gs/gs_test16
+	gs/gs_test16\
+	xxt/xxt_test1\
+	xxt/xxt_test2\
+	xxt/xxt_test4\
+	xxt/xxt_test8
 
 

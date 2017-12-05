@@ -12,6 +12,18 @@ AC_ARG_ENABLE(check, AC_HELP_STRING([--enable-check],
               [Compile with support for unit testing, requires libcheck]),
               [enable_check=${enableval}],[enable_check=no])
 
+AC_ARG_ENABLE(underscore, AC_HELP_STRING([--enable-underscore],
+	     [Underscore name mangling for the Fortran interface]),
+	     [enable_underscore=${enableval}],[enable_underscore=no])
+
+AC_ARG_ENABLE(naive-blas, AC_HELP_STRING([--enable-naive-blas],
+	     [Compile with naive blas]),
+	     [enable_naive_blas=${enableval}],[enable_naive_blas=yes])
+
+AC_ARG_ENABLE(nek5000, AC_HELP_STRING([--enable-nek5000],
+	     [Compile with support for Nek5000]),
+	     [enable_nek5000=${enableval}],[enable_nek5000=no])
+
 AC_PROG_CC
 AC_PROG_RANLIB
 AC_PROG_INSTALL
@@ -29,6 +41,23 @@ if test "x${enable_check}" = xyes; then
    fi
 fi
 
+CPPFLAGS="-DAMG_BLOCK_ROWS=2400 $CPPFLAGS"
+
+if test "x${enable_underscore}" = xyes; then
+   CPPFLAGS="-DUNDERSCORE $CPPFLAGS"
+fi
+
+if test "x${enable_naive_blas}" = xyes; then
+   CPPFLAGS="-DUSE_NAIVE_BLAS $CPPFLAGS"
+fi
+
+if test "x${enable_nek5000}" = xyes; then
+   CPPFLAGS="-DPREFIX=gslib_ -DFPREFIX=fgslib_ -DGLOBAL_LONG_LONG -DUSR_USR_EXIT $CPPFLAGS"
+else
+   CPPFLAGS="-DPREFIX=exags_ $CPPFLAGS"
+fi
+
+
 
 AC_CONFIG_FILES([exags.pc\
 		 Makefile\
@@ -36,7 +65,8 @@ AC_CONFIG_FILES([exags.pc\
 		 tests/Makefile\
 		 tests/comm/Makefile\
 		 tests/crystal/Makefile\
-		 tests/gs/Makefile])
+		 tests/gs/Makefile\
+		 tests/xxt/Makefile])
 AC_OUTPUT
 
 # Display help text
@@ -48,7 +78,7 @@ Configuration of ExaGS ${PACKAGE_VERSION} finished.
 
 Prefix: '${prefix}'.
 Compiler: ${UPC} ${UPCFLAGS} ${CPPFLAGS}
-Libs: ${LD} ${LDFLAGS} ${LIBS}
+
 
 ---------------------------------------------------------
 "

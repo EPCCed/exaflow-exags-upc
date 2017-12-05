@@ -55,7 +55,7 @@ static void init_noop(
 
 struct gs_topology {
   ulong total_shared; /* number of globally unique shared ids */
-  struct array nz; /* array of nonzero_id's, grouped by id, 
+  struct array nz; /* array of nonzero_id's, grouped by id,
                       sorted by primary index, then flag, then index */
   struct array sh; /* array of shared_id's, arbitrary ordering */
   struct array pr; /* array of primary_shared_id's */
@@ -272,7 +272,7 @@ static void make_topology_unique(struct gs_topology *top, slong *id,
   sarray_sort(struct nonzero_id,nz->ptr,nz->n, primary,0, buf);
 
   /* assign owner among shared primaries */
-  
+
   /* create sentinel with i = -1 */
   array_reserve(struct shared_id,sh,sh->n+1);
   ((struct shared_id*)sh->ptr)[sh->n].i = -(uint)1;
@@ -391,6 +391,7 @@ typedef void setup_fun(struct gs_remote *r, struct gs_topology *top,
 /*------------------------------------------------------------------------------
   Pairwise Execution
 ------------------------------------------------------------------------------*/
+
 struct pw_comm_data {
   uint n;      /* number of messages */
   uint *p;     /* message source/dest proc */
@@ -401,9 +402,43 @@ struct pw_comm_data {
 struct pw_data {
   struct pw_comm_data comm[2];
   const uint *map[2];
-  comm_req *req;
   uint buffer_size;
+
+#ifndef __UPC__
+  comm_req *req;
+#endif
+
 };
+
+#ifdef __UPC__
+void pw_exec_recvs(char *buf, const unsigned unit_size, 
+		   const struct pw_comm_data *c, 
+		   thrds_buf *thrd_buf, flgs_buf *flg_buf)
+{
+  const uint *p, *pe, *size=c->size;
+  for(p=c->p,pe=p+c->n;p!=pe;++p) {
+    size_t len = *(size++)*unit_size;
+    while(flg_buf[*p][0] != -1) ;
+    upc_memget(buf, thrd_buf[*p], len);
+    buf += len;
+    flg_buf[*p][0] = 0;
+  }
+}
+
+void pw_exec_sends(char *buf, const unsigned unit_size,
+		   const comm_ptr comm, const struct pw_comm_data *c)
+{
+  const uint *p, *pe, *size=c->size;
+  for(p=c->p,pe=p+c->n;p!=pe;++p) {
+    size_t len = *(size++)*unit_size;
+    while(comm->flgs_dir[*p][MYTHREAD][0] != 0) ;
+    upc_memput(comm->thrds_dir[*p][MYTHREAD], buf, len);
+    comm->flgs_dir[*p][MYTHREAD][0] = -1;
+    buf += len;
+  }
+}
+
+#else
 
 static char *pw_exec_recvs(char *buf, const unsigned unit_size,
                            const comm_ptr comm,
@@ -430,6 +465,7 @@ static char *pw_exec_sends(char *buf, const unsigned unit_size,
   }
   return buf;
 }
+#endif
 
 static void pw_exec(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
@@ -441,10 +477,25 @@ static void pw_exec(
   static gs_gather_fun *const gather_from_buf[] =
     { &gs_gather, &gs_gather_vec, &gs_gather_vec_to_many, &gather_noop };
   const unsigned recv = 0^transpose, send = 1^transpose;
+  const int n_flgs = 1;
   unsigned unit_size = vn*gs_dom_size[dom];
   char *sendbuf;
+  int i, j;
 
 
+#ifdef __UPC__
+
+  comm_alloc_thrd_buf(comm, pwd->comm[recv].total * unit_size, n_flgs);
+
+  /* fill send buffer */
+  scatter_to_buf[mode](buf,data,vn,pwd->map[send],dom);
+
+  /* post sends */
+  pw_exec_sends(buf,unit_size,comm,&pwd->comm[send]);
+
+  /* process receive bufer */
+  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],comm->thrd_buf, comm->flg_buf);
+#else
   /* post receives */
   sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
   /* fill send buffer */
@@ -453,7 +504,8 @@ static void pw_exec(
   pw_exec_sends(sendbuf,unit_size,comm,&pwd->comm[send],
                 &pwd->req[pwd->comm[recv].n]);
   comm_wait(pwd->req,pwd->comm[0].n+pwd->comm[1].n);
-  /* gather using recv buffer */
+#endif 
+ /* gather using recv buffer */
   gather_from_buf[mode](data,buf,vn,pwd->map[recv],dom,op);
 }
 
@@ -533,9 +585,11 @@ static struct pw_data *pw_setup_aux(struct array *sh, buffer *buf,
   /* default behavior: send only locally unflagged data */
   *mem_size+=pw_comm_setup(&pwd->comm[1],sh, FLAGS_LOCAL, buf);
   pwd->map[1] = pw_map_setup(sh, buf, mem_size);
-  
+
+#ifndef __UPC__
   pwd->req = tmalloc(comm_req,pwd->comm[0].n+pwd->comm[1].n);
   *mem_size += (pwd->comm[0].n+pwd->comm[1].n)*sizeof(comm_req);
+#endif
   pwd->buffer_size = pwd->comm[0].total + pwd->comm[1].total;
   return pwd;
 }
@@ -546,13 +600,16 @@ static void pw_free(struct pw_data *data)
   pw_comm_free(&data->comm[1]);
   free((uint*)data->map[0]);
   free((uint*)data->map[1]);
+#ifndef __UPC__
   free(data->req);
+#endif
   free(data);
 }
 
 static void pw_setup(struct gs_remote *r, struct gs_topology *top,
                      const comm_ptr comm, buffer *buf)
 {
+  int i;
   struct pw_data *pwd = pw_setup_aux(&top->sh,buf, &r->mem_size);
   r->buffer_size = pwd->buffer_size;
   r->data = pwd;
@@ -695,7 +752,7 @@ static void crl_work_init(struct array *cw, struct array *sh,
     w->id=aid, w->p=ap, w->ri=ari, w->si=asi;                \
     ++w, ++cw_n;                                             \
   } while(0)
-  
+
   for(s=sh->ptr,se=s+sh->n;s!=se;++s) {
     int send = (s->flags&send_mask)==0;
     int recv = (s->flags&recv_mask)==0;
@@ -707,7 +764,7 @@ static void crl_work_init(struct array *cw, struct array *sh,
     if(send) CW_ADD(s->id,s->p,s->ri,s->i);
   }
   cw->n=cw_n;
-#undef CW_ADD  
+#undef CW_ADD
 }
 
 static uint crl_maps(struct cr_stage *stage, struct array *cw, buffer *buf)
@@ -820,6 +877,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     stage->size_r = stage->size_r1 + stage->size_r2;
     stage->size_total = stage->size_r + stage->size_sk;
     if(stage->size_total>size_max) size_max=stage->size_total;
+
     array_reserve(struct crl_id,cw,cw->n+nrecv[0][0]+nrecv[1][0]);
     wrecv[0] = cw->ptr, wrecv[0] += cw->n, wrecv[1] = wrecv[0]+nrecv[0][0];
     wsend = cw->ptr, wsend += nkeep;
@@ -851,6 +909,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     memmove(wsend,wrecv[0],(nrecv[0][0]+nrecv[1][0])*sizeof(struct crl_id));
     cw->n += nrecv[0][0] + nrecv[1][0];
     cw->n -= nsend[0];
+
     if(id<bh) n=nl; else n-=nl,bl=bh;
     ++stage;
     ++st;
@@ -867,22 +926,24 @@ static struct cr_data *cr_setup_aux(
   struct array cw = null_array;
   struct cr_data *crd = tmalloc(struct cr_data,1);
   *mem_size = sizeof(struct cr_data);
-  
+
   /* default behavior: receive only remotely unflagged data */
   /* default behavior: send only locally unflagged data */
-  
+
   *mem_size += cr_schedule(crd,comm);
-  comm_alloc(comm, THREADS * (*mem_size)); /* Too much? */
+#ifdef __UPC__
+  comm_alloc(comm, 10 * THREADS * (*mem_size)); /* Too much? */
+#endif
   sarray_sort(struct shared_id,sh->ptr,sh->n, i,0, buf);
   crl_work_init(&cw,sh, FLAGS_LOCAL , comm->id);
   size_max[0]=cr_learn(&cw,crd->stage[0],comm,buf, mem_size);
   crl_work_init(&cw,sh, FLAGS_REMOTE, comm->id);
   size_max[1]=cr_learn(&cw,crd->stage[1],comm,buf, mem_size);
-  
+
   crd->stage_buffer_size = size_max[1]>size_max[0]?size_max[1]:size_max[0];
 
   array_free(&cw);
-  
+
   crd->buffer_size = 2*crd->stage_buffer_size;
   comm_alloc(comm, crd->buffer_size);
   return crd;
@@ -975,7 +1036,7 @@ static struct allreduce_data *allreduce_setup_aux(
 {
   struct allreduce_data *ard = tmalloc(struct allreduce_data,1);
   *mem_size = sizeof(struct allreduce_data);
-  
+
   /* default behavior: reduce only unflagged data, copy to all */
   ard->map_to_buf  [0] = allreduce_map_setup(pr,1,1, mem_size);
   ard->map_from_buf[0] = allreduce_map_setup(pr,0,0, mem_size);
@@ -983,7 +1044,7 @@ static struct allreduce_data *allreduce_setup_aux(
   /* transpose behavior: reduce all data, copy to unflagged */
   ard->map_to_buf  [1] = allreduce_map_setup(pr,0,1, mem_size);
   ard->map_from_buf[1] = allreduce_map_setup(pr,1,0, mem_size);
-  
+
   ard->buffer_size = total_shared*2;
   return ard;
 }
@@ -1034,18 +1095,11 @@ static void dry_run_time(double times[3], const struct gs_remote *r,
 static void auto_setup(struct gs_remote *r, struct gs_topology *top,
                        const comm_ptr comm, buffer *buf)
 {
-#ifdef __UPC__
-  cr_setup(r, top,comm,buf);  
-#else
+
   pw_setup(r, top,comm,buf);
-#endif
   
   if(comm->np>1) {
-#ifdef __UPC__
-    const char *name = "crystal router";
-#else
     const char *name = "pairwise";
-#endif
     struct gs_remote r_alt;
     double time[2][3];
 
@@ -1055,7 +1109,7 @@ static void auto_setup(struct gs_remote *r, struct gs_topology *top,
       if(comm->id==0) \
         printf("%g %g %g\n",time[i][0],time[i][1],time[i][2]); \
     } while(0)
-    
+
     #define DRY_RUN_CHECK(str,new_name) do { \
       DRY_RUN(1,&r_alt,str); \
       if(time[1][2]<time[0][2]) \
@@ -1065,14 +1119,11 @@ static void auto_setup(struct gs_remote *r, struct gs_topology *top,
         r_alt.fin(r_alt.data); \
     } while(0)
 
-#ifdef __UPC__
-    DRY_RUN(0, r, "crystal router times (avg, min, max)");
-#else
+
     DRY_RUN(0, r, "pairwise times (avg, min, max)");
 
     cr_setup(&r_alt, top,comm,buf);
     DRY_RUN_CHECK(      "crystal router                ", "crystal router");
-#endif
     
     if(top->total_shared<100000) {
       allreduce_setup(&r_alt, top,comm,buf);
@@ -1250,7 +1301,7 @@ static int fgs_max = 0;
 static int fgs_n = 0;
 
 void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
-                    const comm_ptr *comm, const sint *np, const sint *method)
+                    const int *comm, const sint *np, const sint *method)
 {
   struct gs_data *gsh;
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
@@ -1262,7 +1313,7 @@ void fgs_setup_pick(sint *handle, const slong id[], const sint *n,
 }
 
 void fgs_setup(sint *handle, const slong id[], const sint *n,
-               const comm_ptr *comm, const sint *np)
+               const int *comm, const sint *np)
 {
   struct gs_data *gsh;
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
@@ -1328,7 +1379,7 @@ void fgs_fields(const sint *handle,
   size_t offset;
   void **p;
   uint i;
-  
+
   fgs_check_parms(*handle,*dom,*op,"gs_op_fields",__LINE__);
   if(*n<0) return;
 
