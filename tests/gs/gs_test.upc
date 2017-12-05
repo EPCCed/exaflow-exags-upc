@@ -264,34 +264,42 @@ Suite *comm_suite() {
   s = suite_create("gs");
 
   tc = tcase_create("gs_setup_pairwise");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_setup_pairwise);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_setup_crystal");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_setup_crystal);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_setup_all_reduce");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_setup_all_reduce);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_setup_auto");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_setup_auto);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_pairwise");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_gs_pairwise);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_crystal_router");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_gs_crystal_router);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_all_reduce");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_gs_all_reduce);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("gs_auto");
+  tcase_set_timeout(tc, 15);
   tcase_add_test(tc, test_gs_auto);
   suite_add_tcase(s, tc);
 
