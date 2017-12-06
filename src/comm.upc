@@ -220,6 +220,7 @@ void comm_world(comm_ptr *cpp)
     cp->flgs = NULL;
     cp->thrds_dir = NULL;
     cp->thrd_buf_len = 0;
+    cp->flgs_dir = NULL;
 #else
     cp->h = 0;
     cp->np = 0;
