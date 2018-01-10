@@ -193,6 +193,36 @@ int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs)
 #endif
 }
 
+int comm_alloc_coll_buf(comm_ptr cp, size_t n) {
+
+#ifdef __UPC__
+
+  // Sanitise inputs based on what's in cp's members
+  if (n <= 0) {
+    return 0;
+  }
+  
+  if (cp->col_buf_len > 0 && cp->col_buf_len >= n) {
+    return 0;
+  }
+
+  if (cp->col_buf != NULL) {
+    if (cp->id == 0) upc_free(cp->col_buf);
+  }
+
+  cp->col_buf = upc_all_alloc(cp->np, n);
+
+  if (cp->col_res != NULL) {
+    if (cp->id == 0) upc_free(cp->col_res);
+  }
+
+  cp->col_res = upc_all_alloc(1, n);
+
+  upc_barrier;
+#endif    
+
+}
+
 
 
 // Manufacture a UPC equivalent of comm_world if UPC
@@ -221,6 +251,9 @@ void comm_world(comm_ptr *cpp)
     cp->thrds_dir = NULL;
     cp->thrd_buf_len = 0;
     cp->flgs_dir = NULL;
+    cp->col_buf = NULL;
+    cp->col_res = NULL;
+    cp->col_buf_len = 0;
 #else
     cp->h = 0;
     cp->np = 0;
@@ -286,6 +319,22 @@ void comm_free(comm_ptr *cpp)
     cp->buf = NULL;
     cp->buf_len = 0;
     cp->flgs = NULL;
+
+    if (cp->col_buf) {
+      if (cp->id == 0) 
+	upc_free(cp->col_buf);
+    }
+
+    if (cp->col_res) {
+      if (cp->id == 0) 
+	upc_free(cp->col_res);
+    }
+    upc_barrier;
+
+    cp->col_buf = NULL;
+    cp->col_res = NULL;
+    cp->col_buf_len = 0;
+
 #endif
     free(cp);
     *cpp = NULL;
@@ -588,6 +637,7 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
 static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
                           void *v, uint vn, void *buf)
 {
+#ifdef HAVE_MPI
   if (NULL == cp) return;
   
   size_t total_size = vn*gs_dom_size[dom];
@@ -619,6 +669,62 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
     c<<=1, n>>=1;
     if(id>=base+n) c|=1, base+=n, n+=(odd&1);
   }
+#elif __UPC__
+    int np = cp->np, id = cp->id;
+    uint D, d, i;
+
+    // Copy v into buf, assume buf can hold vn*gs_dom_size[dom] bytes
+    memcpy(buf,v,vn*gs_dom_size[dom]);
+
+    if (np == 1) return;
+
+    // Make a communicator for this operation, each entry in cp->buf_dir should hold vn*gs_dom_size[dom] bytes
+    comm_alloc(cp, vn*gs_dom_size[dom]); /* Fixme const comm... */
+
+    // Do flags
+    cp->flgs[id] = -10;
+    D = floor(log2(np));
+    upc_barrier;
+        
+    if (id >= (1<<D)) {
+      while(cp->flgs[id^(1<<D)] != -10) ;
+      upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
+      cp->flgs[id^(1<<D)] = -5;
+    }
+    
+    if (id < (np - (1<<D))) {
+      while(cp->flgs[id] != -5) ;
+      gs_gather_array(buf, cp->buf, vn, dom, op);
+    }
+
+    cp->flgs[id] = -1;
+    upc_barrier;
+
+    if (id < (1<<D)) {
+      for (d = 0; d < D; d++) {
+
+	while(cp->flgs[id^(1<<d)] != (d-1)) ;
+	upc_memput(cp->buf_dir[id^(1<<d)], buf, vn*gs_dom_size[dom]);
+	cp->flgs[id^(1<<d)] = -2;
+
+	while(cp->flgs[id] != -2) ;
+	gs_gather_array(buf, cp->buf, vn, dom, op);
+	cp->flgs[id] = d;
+      }
+    }
+
+    if (id < (np - (1<<D))) {
+      upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
+      cp->flgs[id^(1<<D)] = -20;
+    }
+
+    if (id >= (1<<D)) {
+      while(cp->flgs[id] != -20) ;
+      memcpy(buf, cp->buf, vn*gs_dom_size[dom]);
+    }
+
+    memcpy(v,buf,vn*gs_dom_size[dom]);
+#endif
 }
 
 // Helper function to call scan on a communicator
@@ -732,8 +838,11 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
   }
   
 #elif __UPC__
-  /*
-  upc_type_t ucp_type = UPC_CHAR;
+  
+
+  if (vn > 1) goto comm_allreduce_byhand;
+
+  upc_type_t ucp_type;
   switch (dom) {
     case gs_double:
       ucp_type = UPC_DOUBLE;
@@ -748,13 +857,17 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
       ucp_type = UPC_LONG;
       break;
     case gs_long_long:
-      ucp_type = UPC_LLONG;
+      goto comm_allreduce_byhand;
       break;
-    default: printf("Warning, comm_allreduce defaulting to %d.\n", ucp_type);
+    default: 
+      goto comm_allreduce_byhand;
   }
 		  
-  upc_op_t upc_op = UPC_ADD;
+  upc_op_t upc_op;
   switch (op) {
+    case gs_add:
+      upc_op = UPC_ADD;
+      break;
     case gs_mul:
       upc_op = UPC_MULT;
       break;
@@ -764,86 +877,40 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
     case gs_max:
       upc_op = UPC_MAX;
       break;
-    default: printf("Warning, comm_allreduce defaulting to %d.\n", upc_op);
+    default: 
+      goto comm_allreduce_byhand;
   }
 
+  
+  comm_alloc_coll_buf(cp, vn * gs_dom_size[dom]);
+  upc_memput(cp->col_buf + MYTHREAD * vn, v, vn*gs_dom_size[dom]);
 
+  upc_barrier;
   switch (ucp_type) {
     case UPC_DOUBLE:
-      ucp_type = UPC_DOUBLE;
+      upc_all_reduceD(cp->col_res, cp->col_buf, upc_op, 
+		      vn * THREADS, vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
       break;
     case UPC_FLOAT:
-      ucp_type = UPC_FLOAT;
+      upc_all_reduceF(cp->col_res, cp->col_buf, upc_op, 
+		      vn * THREADS, vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
       break;
     case UPC_INT:
-      ucp_type = UPC_INT;
+      upc_all_reduceI(cp->col_res, cp->col_buf, upc_op, 
+		      vn * THREADS, vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
       break;
     case UPC_LONG:
-      ucp_type = UPC_LONG;
+      upc_all_reduceL(cp->col_res, cp->col_buf, upc_op, 
+		      vn * THREADS, vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
       break;
-    case UPC_LLONG:
-      ucp_type = UPC_LLONG;
-      break;
-    default: printf("Warning, comm_allreduce defaulting to %d.\n", ucp_type);
+    default: goto comm_allreduce_byhand;
   }
-  */
-  {    
-    int np = cp->np, id = cp->id;
-    uint D, d, i;
+  upc_all_broadcast(cp->col_buf, cp->col_res, vn * gs_dom_size[dom], UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
 
-    // Copy v into buf, assume buf can hold vn*gs_dom_size[dom] bytes
-    memcpy(buf,v,vn*gs_dom_size[dom]);
+  upc_memget(v, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
+  memcpy(buf, v, vn * gs_dom_size[dom]);
 
-    if (np == 1) return;
-
-    // Make a communicator for this operation, each entry in cp->buf_dir should hold vn*gs_dom_size[dom] bytes
-    comm_alloc(cp, vn*gs_dom_size[dom]); /* Fixme const comm... */
-
-    // Do flags
-    cp->flgs[id] = -10;
-    D = floor(log2(np));
-    upc_barrier;
-        
-    if (id >= (1<<D)) {
-      while(cp->flgs[id^(1<<D)] != -10) ;
-      upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
-      cp->flgs[id^(1<<D)] = -5;
-    }
-    
-    if (id < (np - (1<<D))) {
-      while(cp->flgs[id] != -5) ;
-      gs_gather_array(buf, cp->buf, vn, dom, op);
-    }
-
-    cp->flgs[id] = -1;
-    upc_barrier;
-
-    if (id < (1<<D)) {
-      for (d = 0; d < D; d++) {
-
-	while(cp->flgs[id^(1<<d)] != (d-1)) ;
-	upc_memput(cp->buf_dir[id^(1<<d)], buf, vn*gs_dom_size[dom]);
-	cp->flgs[id^(1<<d)] = -2;
-
-	while(cp->flgs[id] != -2) ;
-	gs_gather_array(buf, cp->buf, vn, dom, op);
-	cp->flgs[id] = d;
-      }
-    }
-
-    if (id < (np - (1<<D))) {
-      upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
-      cp->flgs[id^(1<<D)] = -20;
-    }
-
-    if (id >= (1<<D)) {
-      while(cp->flgs[id] != -20) ;
-      memcpy(buf, cp->buf, vn*gs_dom_size[dom]);
-    }
-
-    memcpy(v,buf,vn*gs_dom_size[dom]);
-    return;
-  }
+  return;
 #endif
 
 
