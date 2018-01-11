@@ -144,11 +144,14 @@ struct comm {
   shared[] thrds_buf *shared *thrds_dir; /* Global directory of thread buffers */
   shared strict int volatile *flgs;
   shared[] flgs_buf *shared *flgs_dir;
+  shared char *col_buf;		  /* Buffer for collective operations */
+  shared char *col_res;		  /* Result buffer for collective operations */
   char *buf;			  /* Local part of buffers */
   thrds_buf *thrd_buf;		  /* Local part of thread buffers */
   flgs_buf *flg_buf;
   size_t buf_len;		  /* Shared buffer size */
   size_t thrd_buf_len;		  /* Shared thread buffer size */
+  size_t col_buf_len;		  /* Shared collective buffer size */
 #endif
 };
 
@@ -170,6 +173,7 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp);
 #ifdef __UPC__
 int comm_alloc(comm_ptr cp, size_t n);
 int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs);
+int comm_alloc_coll_buf(comm_ptr cp, size_t n);
 #endif
 void comm_free(comm_ptr *cpp);
 
