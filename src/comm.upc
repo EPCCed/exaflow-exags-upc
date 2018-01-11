@@ -585,6 +585,7 @@ GS_DEFINE_DOM_SIZES()
 static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                      const void *v, uint vn, void *buffer)
 {
+#ifdef HAVE_MPI
   // If comms handle invalid, quit
   if (NULL == cp) return;
 
@@ -631,6 +632,41 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
     c<<=1, n>>=1;
     if(id>=base+n) c|=1, base+=n, n+=(odd&1);
   }
+#elif __UPC__
+  int d;
+  uint D;
+  size_t vsize = vn*gs_dom_size[dom]; 
+  void *red = (char *)scan + vsize;
+  upc_barrier;
+
+  memset(scan, 0, 2 * vsize);
+  comm_alloc(cp, vn*gs_dom_size[dom]); 
+  upc_barrier;
+  memcpy(buffer,v, vn*gs_dom_size[dom]);
+    
+  cp->flgs[MYTHREAD] = -1;    
+  D = ceil(log2(THREADS));
+  upc_barrier;
+
+  for (d = 0; d < D; d++) {
+
+    if ((MYTHREAD + (1<<d)) < THREADS) {
+      while(cp->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
+      upc_memput(cp->buf_dir[MYTHREAD+(1<<d)], buffer, vn*gs_dom_size[dom]);
+      cp->flgs[MYTHREAD+(1<<d)] = -2;
+    }
+
+    if ((MYTHREAD - (1<<d)) >= 0) {      
+      while(cp->flgs[MYTHREAD] != -2) ;    
+      gs_gather_array(scan, cp->buf, vn, dom, op);
+      gs_gather_array(buffer, cp->buf, vn, dom, op);
+    }
+    cp->flgs[MYTHREAD] = d;
+  }
+
+  upc_barrier;
+  comm_allreduce(cp, dom, op, (void*)v, vn, red);  
+#endif
 }
 
 // Allreduce
@@ -732,42 +768,99 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer)
 {
 
-#ifdef HAVE_MPI
-  scan_imp(scan, cp,dom,op, v,vn, buffer);
+#ifdef MPI
+  goto comm_scan_byhand;
 #elif __UPC__
-  int d;
-  uint D;
-  size_t vsize = vn*gs_dom_size[dom]; 
-  void *red = (char *)scan + vsize;
-  upc_barrier;
 
-  memset(scan, 0, 2 * vsize);
-  comm_alloc(cp, vn*gs_dom_size[dom]); 
-  upc_barrier;
-  memcpy(buffer,v, vn*gs_dom_size[dom]);
-    
-  cp->flgs[MYTHREAD] = -1;    
-  D = ceil(log2(THREADS));
-  upc_barrier;
+  if (vn > 1) goto comm_scan_byhand;
 
-  for (d = 0; d < D; d++) {
-
-    if ((MYTHREAD + (1<<d)) < THREADS) {
-      while(cp->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
-      upc_memput(cp->buf_dir[MYTHREAD+(1<<d)], buffer, vn*gs_dom_size[dom]);
-      cp->flgs[MYTHREAD+(1<<d)] = -2;
-    }
-
-    if ((MYTHREAD - (1<<d)) >= 0) {      
-      while(cp->flgs[MYTHREAD] != -2) ;    
-      gs_gather_array(scan, cp->buf, vn, dom, op);
-      gs_gather_array(buffer, cp->buf, vn, dom, op);
-    }
-    cp->flgs[MYTHREAD] = d;
+  upc_type_t ucp_type;
+  switch (dom) {
+    case gs_double:
+      ucp_type = UPC_DOUBLE;
+      break;
+    case gs_float:
+      ucp_type = UPC_FLOAT;
+      break;
+    case gs_int:
+      ucp_type = UPC_INT;
+      break;
+    default: 
+      goto comm_scan_byhand;
+  }
+		  
+  upc_op_t upc_op;
+  switch (op) {
+    case gs_add:
+      upc_op = UPC_ADD;
+      break;
+    case gs_mul:
+      upc_op = UPC_MULT;
+      break;
+    case gs_min:
+      upc_op = UPC_MIN;
+      break;
+    case gs_max:
+      upc_op = UPC_MAX;
+      break;
+    default: 
+      goto comm_scan_byhand;
   }
 
-  upc_barrier;
-  comm_allreduce(cp, dom, op, (void*)v, vn, red);  
+  comm_alloc_coll_buf(cp, vn * gs_dom_size[dom]);
+
+  if (MYTHREAD == 0)
+    upc_memset(cp->col_buf + MYTHREAD * vn, 0, vn*gs_dom_size[dom]);
+
+  if ((MYTHREAD + 1) < THREADS)
+    upc_memput(cp->col_buf + (MYTHREAD + 1) * vn, v, vn*gs_dom_size[dom]);
+
+  switch (ucp_type) {
+    case UPC_DOUBLE:
+      upc_all_prefix_reduceD(cp->col_buf, cp->col_buf, upc_op, vn * THREADS, 
+			     vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
+      break;
+    case UPC_FLOAT:
+      upc_all_prefix_reduceF(cp->col_buf, cp->col_buf, upc_op, vn * THREADS, 
+			     vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
+      break;
+    case UPC_INT:
+      upc_all_prefix_reduceI(cp->col_buf, cp->col_buf, upc_op, vn * THREADS, 
+			     vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
+      break;
+    case UPC_LONG:
+      upc_all_prefix_reduceL(cp->col_buf, cp->col_buf, upc_op, vn * THREADS, 
+			     vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
+      break;
+    default: goto comm_scan_byhand;
+  }
+
+  upc_memget(scan, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
+
+  // Setup pointers for vector sum output
+  void *red = (char *)scan + vn * gs_dom_size[dom];
+  
+  if (MYTHREAD == (THREADS - 1)) {
+
+    // Construct vector sum at the last thread using local data
+    gs_gather_array(red, scan, vn, dom, op);
+    gs_gather_array(red, v, vn, dom, op);
+    
+    // Stash the sum in the shared memory
+    upc_memput(cp->col_buf + MYTHREAD * vn, red, vn *gs_dom_size[dom]);
+  }
+
+  upc_all_broadcast(cp->col_buf, cp->col_buf + (THREADS - 1) * vn, 
+		    vn * gs_dom_size[dom], UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
+
+  if (MYTHREAD != (THREADS - 1)) 
+    upc_memget(red, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
+  return;
+#endif
+
+#if (defined MPI || defined __UPC__)
+ comm_scan_byhand:
+  scan_imp(scan, cp,dom,op, v,vn, buffer);
 #endif
 }
 
@@ -905,7 +998,8 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
       break;
     default: goto comm_allreduce_byhand;
   }
-  upc_all_broadcast(cp->col_buf, cp->col_res, vn * gs_dom_size[dom], UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
+  upc_all_broadcast(cp->col_buf, cp->col_res, vn * gs_dom_size[dom], 
+		    UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
 
   upc_memget(v, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
   memcpy(buf, v, vn * gs_dom_size[dom]);
