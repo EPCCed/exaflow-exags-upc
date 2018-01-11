@@ -94,6 +94,9 @@ typedef int comm_req;
 #ifdef __UPC_CASTABLE__
 #include <upc_castable.h>
 #endif
+#ifdef __UPC_ATOMIC__
+#include <upc_atomic.h>
+#endif
 #else
 typedef int comm_hdl;
 typedef int comm_type;
@@ -142,7 +145,11 @@ struct comm {
 #ifdef __UPC__
   shared[] char *shared *buf_dir; /* Global directory of buffers */
   shared[] thrds_buf *shared *thrds_dir; /* Global directory of thread buffers */
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  shared int volatile *flgs;
+#else
   shared strict int volatile *flgs;
+#endif
   shared[] flgs_buf *shared *flgs_dir;
   shared char *col_buf;		  /* Buffer for collective operations */
   shared char *col_res;		  /* Result buffer for collective operations */
@@ -152,6 +159,11 @@ struct comm {
   size_t buf_len;		  /* Shared buffer size */
   size_t thrd_buf_len;		  /* Shared thread buffer size */
   size_t col_buf_len;		  /* Shared collective buffer size */
+
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  upc_atomicdomain_t *upc_domain;
+#endif
+
 #endif
 };
 

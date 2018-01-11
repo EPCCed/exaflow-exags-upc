@@ -29,6 +29,7 @@ AC_DEFUN([AX_UPC_COMPILER_VENDOR],
 	])
 
 	# Check if the UPC runtime support C-style libraries
+	AC_MSG_CHECKING([UPC runtime support C-style libraries])
 	enable_library="yes"
 	if test "x${ax_cv_upc_compiler_vendor}" = xbupc; then
 	   enable_library="no"
@@ -42,6 +43,28 @@ AC_DEFUN([AX_UPC_COMPILER_VENDOR],
 		
 	AM_CONDITIONAL([ENABLE_LIBRARY], 
 		      [test "x${enable_library}" = xyes])
+
+	if test "x${enable_library}" = xyes; then
+	   AC_MSG_RESULT([yes])
+	else
+	   AC_MSG_RESULT([no])
+	fi
+
+	# Check if the UPC compiler support the UPC atomic extensions
+	AC_MSG_CHECKING([UPC compiler support atomic])
+	have_upc_atomics="no"
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[
+	#if !(defined(__UPC_ATOMIC__))
+	  thisisanerror;
+	#endif
+	])],[have_upc_atomics="yes"])
+	AC_SUBST(have_upc_atomics)
+
+	if test "x${have_upc_atomics}" = xyes; then
+	   AC_MSG_RESULT([yes])
+	else
+	   AC_MSG_RESULT([no])
+	fi
 
 	CC=$_CC
 	CFLAGS=$_CFLAGS

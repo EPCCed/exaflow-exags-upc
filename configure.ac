@@ -24,6 +24,10 @@ AC_ARG_ENABLE(nek5000, AC_HELP_STRING([--enable-nek5000],
 	     [Compile with support for Nek5000]),
 	     [enable_nek5000=${enableval}],[enable_nek5000=no])
 
+AC_ARG_ENABLE(atomics, AC_HELP_STRING([--enable-atomics],
+             [Use UPC atomics for synchronization]),
+	     [enable_atomics=${enableval}],[enable_atomics=no])
+
 AC_PROG_CC
 AC_PROG_RANLIB
 AC_PROG_INSTALL
@@ -55,6 +59,14 @@ if test "x${enable_nek5000}" = xyes; then
    CPPFLAGS="-DPREFIX=gslib_ -DFPREFIX=fgslib_ -DGLOBAL_LONG_LONG -DUSR_USR_EXIT $CPPFLAGS"
 else
    CPPFLAGS="-DPREFIX=exags_ $CPPFLAGS"
+fi
+
+if test "x${enable_atomics}" = xyes; then
+   if test "x${have_upc_atomics}" = xyes; then
+      CPPFLAGS="-DUSE_ATOMIC $CPPFLAGS"
+   else
+      AC_MSG_ERROR([UPC compiler does not support the atomic extension])
+   fi
 fi
 
 

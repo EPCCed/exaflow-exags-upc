@@ -189,8 +189,15 @@ void crystal_router(struct crystal *cr)
   uint id = cr->comm->id, n=cr->comm->np;
   uint send_n, targ, tag = 0;
   int send_hi, recvn;
+  const int st[2] = {-2, -3};
 
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  upc_atomic_relaxed(cr->comm->upc_domain, NULL, UPC_SET, 
+		     (shared void *) &cr->comm->flgs[MYTHREAD], 
+		     &st[0], 0);
+#else
   cr->comm->flgs[MYTHREAD] = -2;
+#endif
   cr->size[MYTHREAD] = 0;
   upc_barrier;
   
@@ -203,14 +210,24 @@ void crystal_router(struct crystal *cr)
     
     if(id==targ) targ=bh, recvn=0;
     if(n&1 && id==bh) recvn=2;
-
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(cr->comm->upc_domain, NULL, UPC_SET, 
+		       (shared void *) &cr->comm->flgs[targ], 
+		       &st[1], 0);
+#else
     cr->comm->flgs[targ] = -3;
+#endif
     while(cr->comm->flgs[MYTHREAD] != -3) ;
     crystal_exchange(cr,send_n,targ,recvn,tag);
 
     if(id<bh) n=nl; else n-=nl,bl=bh;
-
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(cr->comm->upc_domain, NULL, UPC_SET, 
+		       (shared void *) &cr->comm->flgs[MYTHREAD], 
+		       &tag, 0);
+#else
     cr->comm->flgs[MYTHREAD] = tag;
+#endif
     tag += 2;
   }
 #endif
