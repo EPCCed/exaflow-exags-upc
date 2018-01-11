@@ -137,6 +137,13 @@ int comm_alloc(comm_ptr cp, size_t n)
   cp->buf = (char *) &cp->buf_dir[id][0];
 #endif
 
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  // If upc_domain is empty, allocate space for an atomic "SET" domain
+  if (cp->upc_domain == NULL) {
+    cp->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
+  }
+#endif
+
   return 0;
 #endif
 }
@@ -254,6 +261,9 @@ void comm_world(comm_ptr *cpp)
     cp->col_buf = NULL;
     cp->col_res = NULL;
     cp->col_buf_len = 0;
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    cp->upc_domain = NULL;
+#endif
 #else
     cp->h = 0;
     cp->np = 0;
@@ -320,6 +330,7 @@ void comm_free(comm_ptr *cpp)
     cp->buf_len = 0;
     cp->flgs = NULL;
 
+
     if (cp->col_buf) {
       if (cp->id == 0) 
 	upc_free(cp->col_buf);
@@ -335,6 +346,11 @@ void comm_free(comm_ptr *cpp)
     cp->col_res = NULL;
     cp->col_buf_len = 0;
 
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    if (cp->upc_domain) {
+      upc_all_atomicdomain_free(cp->upc_domain);
+    }
+#endif
 #endif
     free(cp);
     *cpp = NULL;
@@ -637,23 +653,35 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
   uint D;
   size_t vsize = vn*gs_dom_size[dom]; 
   void *red = (char *)scan + vsize;
-  upc_barrier;
+  const int st[2] = {-1, -2};
 
+  upc_barrier;
   memset(scan, 0, 2 * vsize);
   comm_alloc(cp, vn*gs_dom_size[dom]); 
   upc_barrier;
   memcpy(buffer,v, vn*gs_dom_size[dom]);
-    
-  cp->flgs[MYTHREAD] = -1;    
+   
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+		     (shared void *) &cp->flgs[MYTHREAD], &st[0], 0);
+#else
+  cp->flgs[MYTHREAD] = -1;
+#endif    
+
   D = ceil(log2(THREADS));
   upc_barrier;
-
   for (d = 0; d < D; d++) {
 
     if ((MYTHREAD + (1<<d)) < THREADS) {
       while(cp->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
       upc_memput(cp->buf_dir[MYTHREAD+(1<<d)], buffer, vn*gs_dom_size[dom]);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+      upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+			 (shared void *) &cp->flgs[MYTHREAD+(1<<d)], &st[1], 0);
+#else
       cp->flgs[MYTHREAD+(1<<d)] = -2;
+#endif
+
     }
 
     if ((MYTHREAD - (1<<d)) >= 0) {      
@@ -661,7 +689,12 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
       gs_gather_array(scan, cp->buf, vn, dom, op);
       gs_gather_array(buffer, cp->buf, vn, dom, op);
     }
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+		       (shared void *) &cp->flgs[MYTHREAD], &d, 0);
+#else
     cp->flgs[MYTHREAD] = d;
+#endif
   }
 
   upc_barrier;
@@ -706,60 +739,87 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
     if(id>=base+n) c|=1, base+=n, n+=(odd&1);
   }
 #elif __UPC__
-    int np = cp->np, id = cp->id;
-    uint D, d, i;
-
-    // Copy v into buf, assume buf can hold vn*gs_dom_size[dom] bytes
-    memcpy(buf,v,vn*gs_dom_size[dom]);
-
-    if (np == 1) return;
-
-    // Make a communicator for this operation, each entry in cp->buf_dir should hold vn*gs_dom_size[dom] bytes
-    comm_alloc(cp, vn*gs_dom_size[dom]); /* Fixme const comm... */
-
-    // Do flags
-    cp->flgs[id] = -10;
-    D = floor(log2(np));
-    upc_barrier;
-        
-    if (id >= (1<<D)) {
-      while(cp->flgs[id^(1<<D)] != -10) ;
-      upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
-      cp->flgs[id^(1<<D)] = -5;
-    }
-    
-    if (id < (np - (1<<D))) {
-      while(cp->flgs[id] != -5) ;
+  int np = cp->np, id = cp->id;
+  uint D, d, i;
+  const int st[5] = {-1, -2, -5, -10, -20};
+  
+  // Copy v into buf, assume buf can hold vn*gs_dom_size[dom] bytes
+  memcpy(buf,v,vn*gs_dom_size[dom]);
+  
+  if (np == 1) return;
+  
+  // Make a communicator for this operation, each entry in cp->buf_dir should hold vn*gs_dom_size[dom] bytes
+  comm_alloc(cp, vn*gs_dom_size[dom]); /* Fixme const comm... */
+  
+  // Do flags
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+		     (shared void *) &cp->flgs[id], &st[3], 0);
+#else
+  cp->flgs[id] = -10;
+#endif
+  D = floor(log2(np));
+  upc_barrier;
+  
+  if (id >= (1<<D)) {
+    while(cp->flgs[id^(1<<D)] != -10) ;
+    upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+		       (shared void *) &cp->flgs[id^(1<<D)], &st[2], 0);
+#else
+    cp->flgs[id^(1<<D)] = -5;
+#endif
+  }
+  
+  if (id < (np - (1<<D))) {
+    while(cp->flgs[id] != -5) ;
+    gs_gather_array(buf, cp->buf, vn, dom, op);
+  }
+  
+  cp->flgs[id] = -1;
+  upc_barrier;
+  
+  if (id < (1<<D)) {
+    for (d = 0; d < D; d++) {
+      
+      while(cp->flgs[id^(1<<d)] != (d-1)) ;
+      upc_memput(cp->buf_dir[id^(1<<d)], buf, vn*gs_dom_size[dom]);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+      upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+			 (shared void *) &cp->flgs[id^(1<<d)], &st[1], 0);
+#else
+      cp->flgs[id^(1<<d)] = -2;
+#endif
+      
+      while(cp->flgs[id] != -2) ;
       gs_gather_array(buf, cp->buf, vn, dom, op);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+      upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+			 (shared void *) &cp->flgs[id], &d, 0);
+#else
+      cp->flgs[id] = d;
+#endif
     }
-
-    cp->flgs[id] = -1;
-    upc_barrier;
-
-    if (id < (1<<D)) {
-      for (d = 0; d < D; d++) {
-
-	while(cp->flgs[id^(1<<d)] != (d-1)) ;
-	upc_memput(cp->buf_dir[id^(1<<d)], buf, vn*gs_dom_size[dom]);
-	cp->flgs[id^(1<<d)] = -2;
-
-	while(cp->flgs[id] != -2) ;
-	gs_gather_array(buf, cp->buf, vn, dom, op);
-	cp->flgs[id] = d;
-      }
-    }
-
-    if (id < (np - (1<<D))) {
-      upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
-      cp->flgs[id^(1<<D)] = -20;
-    }
-
-    if (id >= (1<<D)) {
-      while(cp->flgs[id] != -20) ;
-      memcpy(buf, cp->buf, vn*gs_dom_size[dom]);
-    }
-
-    memcpy(v,buf,vn*gs_dom_size[dom]);
+  }
+  
+  if (id < (np - (1<<D))) {
+    upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
+		       (shared void *) &cp->flgs[id^(1<<D)], &st[4], 0);
+#else
+    cp->flgs[id^(1<<D)] = -20;
+#endif
+    
+  }
+  
+  if (id >= (1<<D)) {
+    while(cp->flgs[id] != -20) ;
+    memcpy(buf, cp->buf, vn*gs_dom_size[dom]);
+  }
+  
+  memcpy(v,buf,vn*gs_dom_size[dom]);
 #endif
 }
 
@@ -998,12 +1058,12 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
       break;
     default: goto comm_allreduce_byhand;
   }
+
   upc_all_broadcast(cp->col_buf, cp->col_res, vn * gs_dom_size[dom], 
 		    UPC_IN_ALLSYNC | UPC_OUT_ALLSYNC);
 
   upc_memget(v, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
   memcpy(buf, v, vn * gs_dom_size[dom]);
-
   return;
 #endif
 

@@ -653,10 +653,17 @@ static void cr_exec(
   unsigned k;
   char *sendbuf, *buf_old, *buf_new;
   const struct cr_stage *stage = crd->stage[transpose];
+ const int st[2] = {-1,-2};
   buf_old = buf;
   buf_new = buf_old + unit_size*crd->stage_buffer_size;
 #ifdef __UPC__
-  comm->flgs[MYTHREAD] = -1; 
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		    (shared void *) &comm->flgs[MYTHREAD], 
+		    &st[0], 0);
+#else
+  comm->flgs[MYTHREAD] = -1;
+#endif
   upc_barrier;
 #endif
   /* crystal router */
@@ -685,11 +692,24 @@ static void cr_exec(
     while(comm->flgs[stage[k].p1] != (k - 1)) ;
     upc_memput(comm->buf_dir[stage[k].p1], sendbuf, 
 	       unit_size*stage[k].size_s);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		      (shared void *) &comm->flgs[stage[k].p1], 
+		      &st[1], 0);
+#else
     comm->flgs[stage[k].p1] = -2;
+#endif
 
     while(comm->flgs[MYTHREAD] != -2) ;
     memcpy(buf_new, comm->buf, unit_size*stage[k].size_r1);
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		      (shared void *) &comm->flgs[MYTHREAD], 
+		      &k, 0);
+#else
     comm->flgs[MYTHREAD] = k;
+#endif
+
 #endif
     { char *t = buf_old; buf_old=buf_new; buf_new=t; }
   }
@@ -847,8 +867,15 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
   uint size_max=0;
   uint tag = comm->np;
   uint st = 0;
+  const int flg[4] = {-1, -2, -3, -4};
 #ifdef __UPC__
-  comm->flgs[MYTHREAD] = -1; 
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+  upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		    (shared void *) &comm->flgs[MYTHREAD], 
+		    &flg[0], 0);
+#else
+  comm->flgs[MYTHREAD] = -1;
+#endif
   upc_barrier;
 #endif
   while(n>1) {
@@ -868,10 +895,22 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
 #elif __UPC__
     while(comm->flgs[stage->p1] != (st - 1)) ;
     upc_memput(comm->buf_dir[stage->p1], nsend, 2 * sizeof(uint));
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		      (shared void *) &comm->flgs[stage->p1], 
+		      &flg[1], 0);
+#else
     comm->flgs[stage->p1] = -2;
+#endif
     while(comm->flgs[MYTHREAD] != -2) ;
     memcpy(nrecv[0], comm->buf, 2 * sizeof(uint));
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		      (shared void *) &comm->flgs[MYTHREAD], 
+		      &flg[2], 0);
+#else
     comm->flgs[MYTHREAD] = -3;
+#endif
 #endif
     stage->size_r1 = nrecv[0][1], stage->size_r2 = nrecv[1][1];
     stage->size_r = stage->size_r1 + stage->size_r2;
@@ -895,12 +934,23 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
     while(comm->flgs[stage->p1] != -3) ;
     upc_memput(comm->buf_dir[stage->p1], wsend, nsend[0]*sizeof(struct crl_id));
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		      (shared void *) &comm->flgs[stage->p1], 
+		      &flg[3], 0);
+#else
     comm->flgs[stage->p1] = -4;
+#endif
 
     while(comm->flgs[MYTHREAD] != -4) ;
     memcpy(wrecv[0], comm->buf, nsend[0]*sizeof(struct crl_id));
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+		      (shared void *) &comm->flgs[MYTHREAD], 
+		      &st, 0);
+#else
     comm->flgs[MYTHREAD] = st;
-
+#endif
 #endif
 
     crl_bi_to_si(cw->ptr,nkeep,stage->size_r);
