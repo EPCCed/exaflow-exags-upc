@@ -216,12 +216,15 @@ int comm_alloc_coll_buf(comm_ptr cp, size_t n) {
   if (cp->col_buf != NULL) {
     if (cp->id == 0) upc_free(cp->col_buf);
   }
+  upc_barrier;
 
   cp->col_buf = upc_all_alloc(cp->np, n);
+  cp->col_buf_len = n;
 
   if (cp->col_res != NULL) {
     if (cp->id == 0) upc_free(cp->col_res);
   }
+  upc_barrier;
 
   cp->col_res = upc_all_alloc(1, n);
 
