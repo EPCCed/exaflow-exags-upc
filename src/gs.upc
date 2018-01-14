@@ -429,11 +429,21 @@ void pw_exec_sends(char *buf, const unsigned unit_size,
 		   const comm_ptr comm, const struct pw_comm_data *c)
 {
   const uint *p, *pe, *size=c->size;
+#if defined(__UPC_ATOMIC__) && defined(USE_ATOMIC)
+  const int flg = -1;
+#endif
   for(p=c->p,pe=p+c->n;p!=pe;++p) {
     size_t len = *(size++)*unit_size;
     while(comm->flgs_dir[*p][MYTHREAD][0] != 0) ;
     upc_memput(comm->thrds_dir[*p][MYTHREAD], buf, len);
+#if defined(__UPC_ATOMIC__) && defined(USE_ATOMIC)
+    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
+                       (shared void *) &comm->flgs_dir[*p][MYTHREAD][0], 
+                       &flg, 0);
+
+#else
     comm->flgs_dir[*p][MYTHREAD][0] = -1;
+#endif
     buf += len;
   }
 }
