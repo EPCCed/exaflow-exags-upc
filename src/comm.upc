@@ -137,13 +137,6 @@ int comm_alloc(comm_ptr cp, size_t n)
   cp->buf = (char *) &cp->buf_dir[id][0];
 #endif
 
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-  // If upc_domain is empty, allocate space for an atomic "SET" domain
-  if (cp->upc_domain == NULL) {
-    cp->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
-  }
-#endif
-
   return 0;
 #endif
 }
@@ -195,8 +188,7 @@ int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs)
   upc_barrier;
   cp->thrd_buf_len = n;
 
-
-  return 1;
+  return 0;
 #endif
 }
 
@@ -267,7 +259,7 @@ void comm_world(comm_ptr *cpp)
     cp->col_res = NULL;
     cp->col_buf_len = 0;
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-    cp->upc_domain = NULL;
+    cp->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
 #endif
 #else
     cp->h = 0;
@@ -304,6 +296,9 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->thrds_dir = NULL;
     cpd->thrd_buf_len = 0;
     cpd->col_buf_len = 0;
+#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
+    cpd->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
+#endif
 #endif
 
     *cpp = cpd;
