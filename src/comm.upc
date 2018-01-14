@@ -295,6 +295,9 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->flgs = NULL;
     cpd->thrds_dir = NULL;
     cpd->thrd_buf_len = 0;
+    cpd->flgs_dir = NULL;
+    cpd->col_buf = NULL;
+    cpd->col_res = NULL;
     cpd->col_buf_len = 0;
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     cpd->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
