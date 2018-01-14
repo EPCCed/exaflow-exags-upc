@@ -245,7 +245,6 @@ START_TEST(test_allreduce) {
 START_TEST(test_scan) {
   comm_ptr cp;
   int int_sum[2], int_r[2], int_v;
-  long long_sum[2], long_r[2], long_v;
   float float_sum[2], float_r[2], float_v;
   double double_sum[2], double_r[2], double_v;
   long ulong_sum[2],ulong_r[2], ulong_v;
@@ -260,11 +259,6 @@ START_TEST(test_scan) {
   comm_scan(int_sum, cp, gs_int, gs_add, &int_v, 1, int_r);
   fail_unless(int_sum[0] == (rank * (rank + 1)>>1));
   fail_unless(int_sum[1] == (size * (size + 1)>>1));
-
-  long_v = cp->id + 1;
-  comm_scan(long_sum, cp, gs_long, gs_add, &long_v, 1, long_r);
-  fail_unless(long_sum[0] == (rank * (rank + 1)>>1));
-  fail_unless(long_sum[1] == (size * (size + 1)>>1));
 
   float_v = cp->id + 1;
   comm_scan(float_sum, cp, gs_float, gs_add, &float_v, 1, float_r);

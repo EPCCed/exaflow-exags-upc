@@ -212,14 +212,14 @@ int comm_alloc_coll_buf(comm_ptr cp, size_t n) {
   if (cp->col_buf_len > 0 && cp->col_buf_len >= n) {
     return 0;
   }
-
+  upc_barrier;
   if (cp->col_buf != NULL) {
     if (cp->id == 0) upc_free(cp->col_buf);
   }
   upc_barrier;
 
   cp->col_buf = upc_all_alloc(cp->np, n);
-  cp->col_buf_len = n;
+
 
   if (cp->col_res != NULL) {
     if (cp->id == 0) upc_free(cp->col_res);
@@ -229,6 +229,8 @@ int comm_alloc_coll_buf(comm_ptr cp, size_t n) {
   cp->col_res = upc_all_alloc(1, n);
 
   upc_barrier;
+  cp->col_buf_len = n;
+
 #endif    
 
 }
@@ -301,6 +303,7 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->flgs = NULL;
     cpd->thrds_dir = NULL;
     cpd->thrd_buf_len = 0;
+    cpd->col_buf_len = 0;
 #endif
 
     *cpp = cpd;
@@ -837,16 +840,16 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
 
   if (vn > 1) goto comm_scan_byhand;
 
-  upc_type_t ucp_type;
+  upc_type_t upc_type;
   switch (dom) {
     case gs_double:
-      ucp_type = UPC_DOUBLE;
+      upc_type = UPC_DOUBLE;
       break;
     case gs_float:
-      ucp_type = UPC_FLOAT;
+      upc_type = UPC_FLOAT;
       break;
     case gs_int:
-      ucp_type = UPC_INT;
+      upc_type = UPC_INT;
       break;
     default: 
       goto comm_scan_byhand;
@@ -878,7 +881,7 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
   if ((MYTHREAD + 1) < THREADS)
     upc_memput(cp->col_buf + (MYTHREAD + 1) * vn, v, vn*gs_dom_size[dom]);
 
-  switch (ucp_type) {
+  switch (upc_type) {
     case UPC_DOUBLE:
       upc_all_prefix_reduceD(cp->col_buf, cp->col_buf, upc_op, vn * THREADS, 
 			     vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
@@ -918,6 +921,7 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
 
   if (MYTHREAD != (THREADS - 1)) 
     upc_memget(red, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
+  upc_barrier;
   return;
 #endif
 
@@ -998,19 +1002,19 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
 
   if (vn > 1) goto comm_allreduce_byhand;
 
-  upc_type_t ucp_type;
+  upc_type_t upc_type;
   switch (dom) {
     case gs_double:
-      ucp_type = UPC_DOUBLE;
+      upc_type = UPC_DOUBLE;
       break;
     case gs_float:
-      ucp_type = UPC_FLOAT;
+      upc_type = UPC_FLOAT;
       break;
     case gs_int:
-      ucp_type = UPC_INT;
+      upc_type = UPC_INT;
       break;
     case gs_long:
-      ucp_type = UPC_LONG;
+      upc_type = UPC_LONG;
       break;
     case gs_long_long:
       goto comm_allreduce_byhand;
@@ -1042,7 +1046,7 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
   upc_memput(cp->col_buf + MYTHREAD * vn, v, vn*gs_dom_size[dom]);
 
   upc_barrier;
-  switch (ucp_type) {
+  switch (upc_type) {
     case UPC_DOUBLE:
       upc_all_reduceD(cp->col_res, cp->col_buf, upc_op, 
 		      vn * THREADS, vn, NULL, UPC_IN_MYSYNC | UPC_OUT_ALLSYNC);
