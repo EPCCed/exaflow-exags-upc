@@ -313,6 +313,7 @@ void comm_free(comm_ptr *cpp)
 {
   if (NULL == cpp) return;
 
+  int i;
   comm_ptr cp = *cpp;
 
   if (NULL != cp) {
@@ -349,6 +350,23 @@ void comm_free(comm_ptr *cpp)
     cp->col_buf = NULL;
     cp->col_res = NULL;
     cp->col_buf_len = 0;
+
+    if (cp->thrds_dir != NULL) {
+      if (cp->thrds_dir[cp->id] != NULL) {
+	for (i = 0; i < cp->np; i++) {
+	  upc_free(cp->thrds_dir[cp->id][i]);
+	}
+	upc_free(cp->thrds_dir[cp->id]);
+      }
+    }
+    upc_barrier;
+
+    if (cp->id == 0) {
+      if (cp->thrds_dir != NULL) {
+	upc_free(cp->thrds_dir);
+      }
+    }
+    upc_barrier;
 
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     if (cp->upc_domain) {
