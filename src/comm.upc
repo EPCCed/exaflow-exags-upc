@@ -14,6 +14,11 @@
 #include "gs_local.h"
 #include "comm.h"
 
+#ifdef HAVE_UPC_COLLECTIVE_CRAY_H
+#include <upc_collective_cray.h>
+#endif
+
+
 // Global declarations
 // Each element in msg_queue is a pointer to a struct message
 // msg_queue[i]->next points to the next msg in a linked list.
@@ -865,7 +870,10 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
       upc_type = UPC_FLOAT;
       break;
     case gs_int:
-      upc_type = UPC_INT;
+      upc_type = UPC_INT;     
+      break;
+    case gs_long:
+      upc_type = UPC_LONG;
       break;
     default: 
       goto comm_scan_byhand;
@@ -1016,6 +1024,31 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
 #elif __UPC__
   
 
+#ifdef HAVE_UPC_COLLECTIVE_CRAY_H
+  cray_upc_dtype_t upc_type;
+
+  switch (dom) {
+    case gs_double:
+      upc_type = CRAY_UPC_DOUBLE;
+      break;
+    case gs_float:
+      upc_type = CRAY_UPC_FLOAT;
+      break;
+    case gs_int:
+      upc_type = CRAY_UPC_INT;
+      break;
+    case gs_long:
+      upc_type = CRAY_UPC_LONG;
+      break;
+    case gs_long_long:
+      upc_type = CRAY_UPC_LONGLONG;
+      break;
+    default: 
+      goto comm_allreduce_byhand;
+  }
+
+#else
+  
   if (vn > 1) goto comm_allreduce_byhand;
 
   upc_type_t upc_type;
@@ -1038,6 +1071,7 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
     default: 
       goto comm_allreduce_byhand;
   }
+#endif
 		  
   upc_op_t upc_op;
   switch (op) {
@@ -1057,7 +1091,15 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
       goto comm_allreduce_byhand;
   }
 
-  
+#ifdef HAVE_UPC_COLLECTIVE_CRAY_H
+  comm_alloc(cp, vn*gs_dom_size[dom]);
+  upc_memput(cp->buf_dir[MYTHREAD], v, vn*gs_dom_size[dom]);
+  cray_upc_team_allreduce(NULL, cp->buf_dir[MYTHREAD], 
+			  vn, upc_type, upc_op, CRAY_UPC_TEAM_ALL, NULL);   
+  upc_memget(v, cp->buf_dir[MYTHREAD], vn*gs_dom_size[dom]);    
+  memcpy(buf, v, vn * gs_dom_size[dom]);                                                                            
+  return;           
+#else  
   comm_alloc_coll_buf(cp, vn * gs_dom_size[dom]);
   upc_memput(cp->col_buf + MYTHREAD * vn, v, vn*gs_dom_size[dom]);
 
@@ -1089,7 +1131,7 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
   memcpy(buf, v, vn * gs_dom_size[dom]);
   return;
 #endif
-
+#endif
 
 #if (defined MPI || defined __UPC__)
 comm_allreduce_byhand:

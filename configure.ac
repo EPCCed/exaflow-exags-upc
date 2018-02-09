@@ -34,6 +34,9 @@ AC_PROG_INSTALL
 AM_PROG_UPC
 AX_UPC_COMPILER_VENDOR
 
+# Test for Cray UPC extensions
+AC_CHECK_HEADERS([upc_collective_cray.h])
+
 # Test for unit testing framework
 if test "x${enable_check}" = xyes; then
    PKG_CHECK_EXISTS([check],[have_check=yes],[have_check=no])
