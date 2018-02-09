@@ -321,7 +321,7 @@ void comm_free(comm_ptr *cpp)
     MPI_Comm_free(&(cp->h));
 #elif __UPC__
     upc_barrier;
-    if (cp->buf_dir) {
+    if (cp->buf_dir != NULL) {
       upc_free(cp->buf_dir[cp->id]);
     }
     upc_barrier;
@@ -336,12 +336,12 @@ void comm_free(comm_ptr *cpp)
     cp->flgs = NULL;
 
 
-    if (cp->col_buf) {
+    if (cp->col_buf != NULL) {
       if (cp->id == 0) 
 	upc_free(cp->col_buf);
     }
 
-    if (cp->col_res) {
+    if (cp->col_res != NULL) {
       if (cp->id == 0) 
 	upc_free(cp->col_res);
     }
