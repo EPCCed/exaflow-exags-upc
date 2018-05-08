@@ -1040,9 +1040,11 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
     case gs_long:
       upc_type = CRAY_UPC_LONG;
       break;
+#ifdef USE_LONG_LONG
     case gs_long_long:
       upc_type = CRAY_UPC_LONGLONG;
       break;
+#endif
     default: 
       goto comm_allreduce_byhand;
   }
@@ -1065,9 +1067,11 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
     case gs_long:
       upc_type = UPC_LONG;
       break;
+#ifdef USE_LONG_LONG
     case gs_long_long:
       goto comm_allreduce_byhand;
       break;
+#endif
     default: 
       goto comm_allreduce_byhand;
   }
