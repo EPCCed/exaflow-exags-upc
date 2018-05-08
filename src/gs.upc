@@ -706,9 +706,8 @@ static void cr_exec(
 		    (shared void *) &comm->flgs[MYTHREAD], 
 		    &st[0], 0);
 #else
-  comm->flgs[MYTHREAD] = -1;
+  upc_memput_nbi(&comm->flgs[MYTHREAD], &st[0], sizeof(int));  
 #endif
-  upc_barrier;
 #endif
   /* crystal router */
   for(k=0;k<nstages;++k) {
@@ -722,8 +721,12 @@ static void cr_exec(
                unit_size*stage[k].size_r2, stage[k].p2, comm->np+k);
 #endif
     sendbuf = buf_new+unit_size*stage[k].size_r;
-    if(k==0)
+    if(k==0) {
       scatter_user_to_buf[mode](sendbuf,data,vn,stage[0].scatter_map,dom);
+#if defined(__UPC__) && !defined(USE_ATOMIC)
+      upc_synci();
+#endif
+    }
     else
       scatter_buf_to_buf[mode](sendbuf,buf_old,vn,stage[k].scatter_map,dom),
       gather_buf_to_buf [mode](sendbuf,buf_old,vn,stage[k].gather_map ,dom,op);
