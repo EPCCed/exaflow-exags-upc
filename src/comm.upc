@@ -870,7 +870,7 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
       upc_type = UPC_FLOAT;
       break;
     case gs_int:
-      upc_type = UPC_INT;     
+      upc_type = UPC_INT;
       break;
     case gs_long:
       upc_type = UPC_LONG;
@@ -1098,11 +1098,11 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
 #ifdef HAVE_UPC_COLLECTIVE_CRAY_H
   comm_alloc(cp, vn*gs_dom_size[dom]);
   upc_memput(cp->buf_dir[MYTHREAD], v, vn*gs_dom_size[dom]);
-  cray_upc_team_allreduce(NULL, cp->buf_dir[MYTHREAD], 
-			  vn, upc_type, upc_op, CRAY_UPC_TEAM_ALL, NULL);   
-  upc_memget(v, cp->buf_dir[MYTHREAD], vn*gs_dom_size[dom]);    
-  memcpy(buf, v, vn * gs_dom_size[dom]);                                                                            
-  return;           
+  cray_upc_team_allreduce(NULL, cp->buf_dir[MYTHREAD],
+			  vn, upc_type, upc_op, CRAY_UPC_TEAM_ALL, NULL);
+  upc_memget(buf, cp->buf_dir[MYTHREAD], vn*gs_dom_size[dom]);
+  memcpy(v, buf, vn * gs_dom_size[dom]);
+  return;
 #else  
   comm_alloc_coll_buf(cp, vn * gs_dom_size[dom]);
   upc_memput(cp->col_buf + MYTHREAD * vn, v, vn*gs_dom_size[dom]);
