@@ -1042,7 +1042,9 @@ static struct cr_data *cr_setup_aux(
   array_free(&cw);
 
   crd->buffer_size = 2*crd->stage_buffer_size;
+#ifdef __UPC
   comm_alloc(comm, crd->buffer_size);
+#endif
   return crd;
 }
 
