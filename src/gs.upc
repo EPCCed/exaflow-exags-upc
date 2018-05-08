@@ -397,6 +397,9 @@ struct pw_comm_data {
   uint *p;     /* message source/dest proc */
   uint *size;  /* size of message */
   uint total;  /* sum of message sizes */
+#ifdef __UPC__
+  char *flg;
+#endif
 };
 
 struct pw_data {
@@ -412,40 +415,62 @@ struct pw_data {
 
 #ifdef __UPC__
 void pw_exec_recvs(char *buf, const unsigned unit_size, 
-		   const struct pw_comm_data *c, 
-		   thrds_buf *thrd_buf, flgs_buf *flg_buf)
+		   struct pw_comm_data *c,  comm_ptr comm)
+		 
 {
-  const uint *p, *pe, *size=c->size;
-  for(p=c->p,pe=p+c->n;p!=pe;++p) {
-    size_t len = *(size++)*unit_size;
-    while(flg_buf[*p][0] != -1) ;
-    upc_memget(buf, thrd_buf[*p], len);
-    buf += len;
-    flg_buf[*p][0] = 0;
+  uint i;
+  uint data_left = c->n;
+  const int flg = 0;
+
+  while (data_left) {
+    uint acc = 0;
+    for(i=0;i < c->n;++i) {
+      const size_t len = c->size[i] * unit_size;
+      if (!c->flg[i]) {	
+	const int thrd = c->p[i];
+	const flgs_buf fdir = comm->flg_buf[thrd];
+	if (fdir[0] == -1) {
+	  const thrds_buf tdir = comm->thrd_buf[thrd];	  
+	  upc_memget_nbi(buf + acc, tdir, len);	  
+	  upc_memput_nbi(fdir, &flg, sizeof(int));
+	  c->flg[i] = 1;
+	  data_left--;
+	}
+      }
+      acc += len; 
+    }
+    upc_synci_attempt();  
   }
+  memset(c->flg, 0, THREADS);
 }
 
 void pw_exec_sends(char *buf, const unsigned unit_size,
-		   const comm_ptr comm, const struct pw_comm_data *c)
+		   const comm_ptr comm, struct pw_comm_data *c)
 {
-  const uint *p, *pe, *size=c->size;
-#if defined(__UPC_ATOMIC__) && defined(USE_ATOMIC)
   const int flg = -1;
-#endif
-  for(p=c->p,pe=p+c->n;p!=pe;++p) {
-    size_t len = *(size++)*unit_size;
-    while(comm->flgs_dir[*p][MYTHREAD][0] != 0) ;
-    upc_memput(comm->thrds_dir[*p][MYTHREAD], buf, len);
-#if defined(__UPC_ATOMIC__) && defined(USE_ATOMIC)
-    upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
-                       (shared void *) &comm->flgs_dir[*p][MYTHREAD][0], 
-                       &flg, 0);
+  uint i;
+  uint data_left = c->n;
 
-#else
-    comm->flgs_dir[*p][MYTHREAD][0] = -1;
-#endif
-    buf += len;
-  }
+  while (data_left) {
+    uint acc = 0;
+    for(i=0;i<c->n;++i) {
+      const size_t len = c->size[i]*unit_size;
+      if (!c->flg[i]) {
+	const int thrd = c->p[i];
+	const flgs_buf fdir = comm->flgs_dir[thrd][MYTHREAD];
+	if (fdir[0] == 0) {
+	  const thrds_buf tdir = comm->thrds_dir[thrd][MYTHREAD];
+	  upc_memput_nbi(tdir, buf + acc, len);
+	  upc_memput_nbi(comm->flgs_dir[thrd][MYTHREAD], &flg, sizeof(int));
+	  c->flg[i] = 1;
+	  data_left--;
+	}
+      }
+      acc += len;
+    }
+    upc_synci_attempt();        
+  }  
+  memset(c->flg, 0, THREADS);
 }
 
 #else
@@ -504,7 +529,7 @@ static void pw_exec(
   pw_exec_sends(buf,unit_size,comm,&pwd->comm[send]);
 
   /* process receive bufer */
-  pw_exec_recvs(buf,unit_size,&pwd->comm[recv],comm->thrd_buf, comm->flg_buf);
+  pw_exec_recvs(buf,unit_size,&pwd->comm[recv], comm);
 #else
   /* post receives */
   sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
@@ -539,6 +564,9 @@ static uint pw_comm_setup(struct pw_comm_data *data, struct array *sh,
   data->p = tmalloc(uint,2*n); mem_size+=2*n*sizeof(uint);
   data->size = data->p + n;
   data->total = count;
+#ifdef __UPC__
+  data->flg = calloc(THREADS, sizeof(char));
+#endif
   n = 0, lp=-(uint)1;
   for(s=sh->ptr,se=s+sh->n;s!=se;++s) {
     if(s->flags&flags_mask) continue;
@@ -553,7 +581,13 @@ static uint pw_comm_setup(struct pw_comm_data *data, struct array *sh,
   return mem_size;
 }
 
-static void pw_comm_free(struct pw_comm_data *data) { free(data->p); }
+static void pw_comm_free(struct pw_comm_data *data) 
+{ 
+  free(data->p); 
+#ifdef __UPC__
+  free(data->flg);
+#endif 
+}
 
 /* assumes that the bi field of sh is set */
 static const uint *pw_map_setup(struct array *sh, buffer *buf, uint *mem_size)
