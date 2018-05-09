@@ -136,6 +136,39 @@ START_TEST(test_free) {
 
 } END_TEST
 
+START_TEST(test_dup) {
+  comm_ptr cp;
+  comm_ptr cp_dup[4];
+  int i;
+
+  comm_init();
+  comm_world(&cp);
+  comm_alloc(cp, sizeof(int));
+  memset(cp->buf, MYTHREAD, sizeof(int));
+  for (i = 0; i < 4; i++) {
+    comm_dup(&cp_dup[i], cp);
+    fail_unless(cp_dup[i]->np == cp->np);
+    fail_unless(cp_dup[i]->id == cp->id);
+    fail_unless(cp_dup[i]->h == cp->h);
+    fail_unless(cp_dup[i]->buf_len = cp->buf_len);
+    fail_unless(cp_dup[i]->buf[0] == cp->buf[0]);
+    fail_unless(cp_dup[i]->buf_dir[MYTHREAD][0] == cp->buf_dir[MYTHREAD][0]);
+    fail_unless((*cp_dup[i]->ref_count) == (*cp->ref_count));
+    fail_unless(*cp_dup[i]->ref_count == (i + 1));		
+  }
+
+  for (i = 3; i >= 0; i--) {
+    comm_free(&cp_dup[i]);
+    fail_unless((*cp->ref_count) == i);
+    fail_unless(cp->buf != NULL);
+    fail_unless(cp->buf_dir[MYTHREAD][0] == MYTHREAD);
+  }
+
+  comm_free(&cp);
+  fail_unless(cp == NULL);
+
+} END_TEST
+
 START_TEST(test_reduce) {
   comm_ptr cp;
   int int_v, int_glb;
@@ -320,6 +353,10 @@ Suite *comm_suite() {
 
   tc = tcase_create("comm_free");
   tcase_add_test(tc, test_free);
+  suite_add_tcase(s, tc);
+
+  tc = tcase_create("comm_dup");
+  tcase_add_test(tc, test_dup);
   suite_add_tcase(s, tc);
 
   tc = tcase_create("comm_reduce");

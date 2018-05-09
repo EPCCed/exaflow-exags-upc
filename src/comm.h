@@ -163,7 +163,7 @@ struct comm {
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
   upc_atomicdomain_t *upc_domain;
 #endif
-
+  int *ref_count;
 #endif
 };
 

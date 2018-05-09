@@ -263,6 +263,8 @@ void comm_world(comm_ptr *cpp)
     cp->col_buf = NULL;
     cp->col_res = NULL;
     cp->col_buf_len = 0;
+    cp->ref_count = malloc(sizeof(int));
+    *cp->ref_count = 0;
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     cp->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
 #endif
@@ -294,18 +296,20 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
     cpd->id = cp->id;
 
 #ifdef __UPC__
-    cpd->buf_len = 0;
-    cpd->buf_dir = NULL;
-    cpd->buf = NULL;
-    cpd->flgs = NULL;
-    cpd->thrds_dir = NULL;
-    cpd->thrd_buf_len = 0;
-    cpd->flgs_dir = NULL;
-    cpd->col_buf = NULL;
-    cpd->col_res = NULL;
-    cpd->col_buf_len = 0;
+    cpd->buf_len = cp->buf_len;
+    cpd->buf_dir = cp->buf_dir;
+    cpd->buf = cp->buf;
+    cpd->flgs = cp->flgs;
+    cpd->thrds_dir = cp->thrds_dir;
+    cpd->thrd_buf_len = cp->thrd_buf_len;
+    cpd->flgs_dir = cp->flgs_dir;
+    cpd->col_buf = cp->col_buf;
+    cpd->col_res = cp->col_res;
+    cpd->col_buf_len = cp->col_buf_len;
+    cpd->ref_count = cp->ref_count;
+    (*cpd->ref_count)++;
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-    cpd->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
+    cpd->upc_domain = cp->upc_domain;
 #endif
 #endif
 
@@ -325,59 +329,65 @@ void comm_free(comm_ptr *cpp)
 #ifdef MPI
     MPI_Comm_free(&(cp->h));
 #elif __UPC__
-    upc_barrier;
-    if (cp->buf_dir != NULL) {
-      upc_free(cp->buf_dir[cp->id]);
-    }
-    upc_barrier;
-    if (cp->id == 0) {
-      upc_free(cp->buf_dir);
-      upc_free((shared void*)cp->flgs);
-    }
-    upc_barrier;
-    cp->buf_dir = NULL;
-    cp->buf = NULL;
-    cp->buf_len = 0;
-    cp->flgs = NULL;
-
-
-    if (cp->col_buf != NULL) {
-      if (cp->id == 0) 
-	upc_free(cp->col_buf);
-    }
-
-    if (cp->col_res != NULL) {
-      if (cp->id == 0) 
-	upc_free(cp->col_res);
-    }
-    upc_barrier;
-
-    cp->col_buf = NULL;
-    cp->col_res = NULL;
-    cp->col_buf_len = 0;
-
-    if (cp->thrds_dir != NULL) {
-      if (cp->thrds_dir[cp->id] != NULL) {
-	for (i = 0; i < cp->np; i++) {
-	  upc_free(cp->thrds_dir[cp->id][i]);
-	}
-	upc_free(cp->thrds_dir[cp->id]);
+    if (!(*cp->ref_count)) { 
+      upc_barrier;
+      if (cp->buf_dir != NULL) {
+	upc_free(cp->buf_dir[cp->id]);
       }
-    }
-    upc_barrier;
-
-    if (cp->id == 0) {
+      upc_barrier;
+      if (cp->id == 0) {
+	upc_free(cp->buf_dir);
+	upc_free((shared void*)cp->flgs);
+      }
+      upc_barrier;
+      cp->buf_dir = NULL;
+      cp->buf = NULL;
+      cp->buf_len = 0;
+      cp->flgs = NULL;
+      
+      
+      if (cp->col_buf != NULL) {
+	if (cp->id == 0) 
+	  upc_free(cp->col_buf);
+      }
+      
+      if (cp->col_res != NULL) {
+	if (cp->id == 0) 
+	  upc_free(cp->col_res);
+      }
+      upc_barrier;
+      
+      cp->col_buf = NULL;
+      cp->col_res = NULL;
+      cp->col_buf_len = 0;
+      
       if (cp->thrds_dir != NULL) {
-	upc_free(cp->thrds_dir);
+	if (cp->thrds_dir[cp->id] != NULL) {
+	  for (i = 0; i < cp->np; i++) {
+	    upc_free(cp->thrds_dir[cp->id][i]);
+	  }
+	  upc_free(cp->thrds_dir[cp->id]);
+	}
       }
-    }
-    upc_barrier;
-
+      upc_barrier;
+      
+      if (cp->id == 0) {
+	if (cp->thrds_dir != NULL) {
+	  upc_free(cp->thrds_dir);
+	}
+      }
+      upc_barrier;
+      
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-    if (cp->upc_domain) {
-      upc_all_atomicdomain_free(cp->upc_domain);
-    }
+      if (cp->upc_domain) {
+	upc_all_atomicdomain_free(cp->upc_domain);
+      }
 #endif
+      free(cp->ref_count);
+    }
+    else {
+      (*cp->ref_count)--;
+    }
 #endif
     free(cp);
     *cpp = NULL;
