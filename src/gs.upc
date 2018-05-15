@@ -1418,9 +1418,8 @@ void fgs_setup(sint *handle, const slong id[], const sint *n,
   if(fgs_n==fgs_max) fgs_max+=fgs_max/2+1,
                      fgs_info=trealloc(struct gs_data*,fgs_info,fgs_max);
   gsh=fgs_info[fgs_n]=tmalloc(struct gs_data,1);
-  //  comm_dup(&(gsh->comm),*comm);
-  comm_world(&(gsh->comm));
-  //gs_setup_aux(gsh,id,*n,0,gs_auto,1);
+  if (glb_comm == NULL) comm_world(&glb_comm);
+  comm_dup(&(gsh->comm),glb_comm);
   gs_setup_aux(gsh,id,*n,0,gs_auto,1);
   *handle = fgs_n++;
 }
