@@ -50,6 +50,9 @@ void comm_init()
 
   //  upc_barrier;
 
+  if (glb_comm == NULL) 
+    comm_world(&glb_comm);
+
 #endif
 }
 

@@ -60,7 +60,7 @@ void fcrs_setup(sint *handle, const sint *sid, const int *comm, const sint *np, 
     sid_array=trealloc(int,sid_array,handle_max);
 
   comm_init();
-  comm_world(&c);
+  comm_dup(&c,glb_comm);
 
   sid_array[handle_n]=*sid;
 
