@@ -31,6 +31,8 @@ static upc_lock_t *shared msg_queue_lock[THREADS];
 
 #endif
 
+comm_ptr glb_comm = NULL;
+
 // Initialise Comms methods
 void comm_init()
 {

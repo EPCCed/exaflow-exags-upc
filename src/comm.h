@@ -167,6 +167,8 @@ struct comm {
 #endif
 };
 
+extern comm_ptr glb_comm;
+
 struct message {
   uint src;
   int tag;
