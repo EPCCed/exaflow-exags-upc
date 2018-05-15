@@ -163,9 +163,11 @@ struct comm {
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
   upc_atomicdomain_t *upc_domain;
 #endif
-
+  int *ref_count;
 #endif
 };
+
+extern comm_ptr glb_comm;
 
 struct message {
   uint src;

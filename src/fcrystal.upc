@@ -92,8 +92,8 @@ void fcrystal_setup(sint *handle, const int *comm, const sint *np) /* Badness...
     handle_max+=handle_max/2+1,
     handle_array=trealloc(struct crystal*,handle_array,handle_max);
   handle_array[handle_n]=p=tmalloc(struct crystal,1);
-  comm_init();
-  comm_world(&(p->comm));
+  if (glb_comm == NULL) comm_world(&glb_comm);
+  comm_dup(&(p->comm),glb_comm);
   buffer_init(&p->data,1000);
   buffer_init(&p->work,1000);
   *handle = handle_n++;
