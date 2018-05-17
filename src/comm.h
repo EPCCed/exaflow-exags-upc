@@ -100,9 +100,9 @@ typedef int comm_req;
 #ifdef _CRAYC
 #define UPC_POLL upc_fence
 #elif BERKELEY_UPC_RUNTIME
-#define UPC_POLL bupc_poll
+#define UPC_POLL bupc_poll()
 #else 
-#define UPC_POLL upc_poll
+#define UPC_POLL upc_poll()
 #endif
 #else
 typedef int comm_hdl;
