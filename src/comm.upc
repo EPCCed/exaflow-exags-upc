@@ -715,7 +715,7 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
   for (d = 0; d < D; d++) {
 
     if ((MYTHREAD + (1<<d)) < THREADS) {
-      while(cp->flgs[MYTHREAD+(1<<d)] != (d-1)) ;
+      while(cp->flgs[MYTHREAD+(1<<d)] != (d-1)) upc_poll();
       upc_memput(cp->buf_dir[MYTHREAD+(1<<d)], buffer, vn*gs_dom_size[dom]);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
@@ -727,7 +727,7 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
     }
 
     if ((MYTHREAD - (1<<d)) >= 0) {      
-      while(cp->flgs[MYTHREAD] != -2) ;    
+      while(cp->flgs[MYTHREAD] != -2) upc_poll();    
       gs_gather_array(scan, cp->buf, vn, dom, op);
       gs_gather_array(buffer, cp->buf, vn, dom, op);
     }
@@ -804,7 +804,7 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
   upc_barrier;
   
   if (id >= (1<<D)) {
-    while(cp->flgs[id^(1<<D)] != -10) ;
+    while(cp->flgs[id^(1<<D)] != -10) upc_poll();
     upc_memput(cp->buf_dir[id^(1<<D)], buf, vn*gs_dom_size[dom]);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
@@ -815,7 +815,7 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
   }
   
   if (id < (np - (1<<D))) {
-    while(cp->flgs[id] != -5) ;
+    while(cp->flgs[id] != -5) upc_poll();
     gs_gather_array(buf, cp->buf, vn, dom, op);
   }
   
@@ -825,7 +825,7 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
   if (id < (1<<D)) {
     for (d = 0; d < D; d++) {
       
-      while(cp->flgs[id^(1<<d)] != (d-1)) ;
+      while(cp->flgs[id^(1<<d)] != (d-1)) upc_poll();
       upc_memput(cp->buf_dir[id^(1<<d)], buf, vn*gs_dom_size[dom]);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
@@ -834,7 +834,7 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
       cp->flgs[id^(1<<d)] = -2;
 #endif
       
-      while(cp->flgs[id] != -2) ;
+      while(cp->flgs[id] != -2) upc_poll();
       gs_gather_array(buf, cp->buf, vn, dom, op);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_relaxed(cp->upc_domain, NULL, UPC_SET, 
@@ -857,7 +857,7 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
   }
   
   if (id >= (1<<D)) {
-    while(cp->flgs[id] != -20) ;
+    while(cp->flgs[id] != -20) upc_poll();
     memcpy(buf, cp->buf, vn*gs_dom_size[dom]);
   }
   
