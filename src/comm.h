@@ -97,6 +97,13 @@ typedef int comm_req;
 #ifdef __UPC_ATOMIC__
 #include <upc_atomic.h>
 #endif
+#ifdef _CRAYC
+#define UPC_POLL upc_fence
+#elif BERKELEY_UPC_RUNTIME
+#define UPC_POLL bupc_poll
+#else 
+#define UPC_POLL upc_poll
+#endif
 #else
 typedef int comm_hdl;
 typedef int comm_type;
