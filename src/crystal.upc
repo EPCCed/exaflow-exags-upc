@@ -97,7 +97,7 @@ static uint crystal_move(struct crystal *cr, uint cutoff, int send_hi)
   comm_alloc(cr->comm, n * sizeof(uint));
   send = (unsigned int*) cr->comm->buf;
 
-  while(cr->size[MYTHREAD] > 0) ;
+  while(cr->size[MYTHREAD] > 0) UPC_POLL;
 #endif
 
   if(send_hi) { /* send hi, keep lo */
