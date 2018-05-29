@@ -208,7 +208,7 @@ START_TEST(test_allreduce) {
   long long_v[2], long_glb[2];
   float float_v[2], float_glb[2];
   double double_v[2], double_glb[2];
-  long ulong_v[2], ulong_glb[2];
+  slong slong_v[2], slong_glb[2];
   int size;
 
   comm_init();
@@ -232,9 +232,9 @@ START_TEST(test_allreduce) {
   comm_allreduce(cp, gs_double, gs_add, double_v, 1, double_glb);
   fail_unless(double_glb[0] == (double) ((size * (size + 1))>>1));
 
-  ulong_v[0] = cp->id + 1;
-  comm_allreduce(cp, gs_slong, gs_add, ulong_v, 1, ulong_glb);
-  fail_unless(ulong_glb[0] == (size * (size + 1))>>1);
+  slong_v[0] = (slong) cp->id + 1;
+  comm_allreduce(cp, gs_slong, gs_add, slong_v, 1, slong_glb);
+  fail_unless(slong_glb[0] == (size * (size + 1))>>1);
 
   int_v[0] = cp->id + 1;
   int_v[1] = cp->id + 1;
@@ -264,12 +264,12 @@ START_TEST(test_allreduce) {
   fail_unless(double_glb[0] == (size * (size + 1))>>1);
   fail_unless(double_glb[1] == (size * (size + 1))>>1);
 
-  ulong_v[0] = cp->id + 1;
-  ulong_v[1] = cp->id + 1;
-  memset(ulong_glb, 0, 2 * sizeof(long));
-  comm_allreduce(cp, gs_slong, gs_add, ulong_v, 2, ulong_glb);
-  fail_unless(ulong_glb[0] == (size * (size + 1))>>1);
-  fail_unless(ulong_glb[1] == (size * (size + 1))>>1);
+  slong_v[0] = (slong) cp->id + 1;
+  slong_v[1] = (slong) cp->id + 1;
+  memset(slong_glb, 0, 2 * sizeof(slong));
+  comm_allreduce(cp, gs_slong, gs_add, slong_v, 2, slong_glb);
+  fail_unless(slong_glb[0] == (size * (size + 1))>>1);
+  fail_unless(slong_glb[1] == (size * (size + 1))>>1);
 
 
   comm_free(&cp);
@@ -280,7 +280,7 @@ START_TEST(test_scan) {
   int int_sum[2], int_r[2], int_v;
   float float_sum[2], float_r[2], float_v;
   double double_sum[2], double_r[2], double_v;
-  long ulong_sum[2],ulong_r[2], ulong_v;
+  slong slong_sum[2],slong_r[2], slong_v;
   int rank, size;
 
   comm_init();
@@ -303,10 +303,10 @@ START_TEST(test_scan) {
   fail_unless(double_sum[0] == (rank * (rank + 1)>>1));
   fail_unless(double_sum[1] == (size * (size + 1)>>1));
 
-  ulong_v = cp->id + 1;
-  comm_scan(ulong_sum, cp, gs_slong, gs_add, &ulong_v, 1, ulong_r);
-  fail_unless(ulong_sum[0] == (rank * (rank + 1)>>1));
-  fail_unless(ulong_sum[1] == (size * (size + 1)>>1));
+  slong_v = cp->id + 1;
+  comm_scan(slong_sum, cp, gs_slong, gs_add, &slong_v, 1, slong_r);
+  fail_unless(slong_sum[0] == (rank * (rank + 1)>>1));
+  fail_unless(slong_sum[1] == (size * (size + 1)>>1));
 
   comm_free(&cp);
 } END_TEST
