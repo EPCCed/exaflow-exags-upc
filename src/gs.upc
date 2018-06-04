@@ -425,6 +425,7 @@ void pw_exec_recvs(char *buf, const unsigned unit_size,
   while (data_left) {
     uint acc = 0;
     for(i=0;i < c->n;++i) {
+      UPC_POLL;
       const size_t len = c->size[i] * unit_size;
       if (!c->flg[i]) {	
 	const int thrd = c->p[i];
@@ -454,6 +455,7 @@ void pw_exec_sends(char *buf, const unsigned unit_size,
   while (data_left) {
     uint acc = 0;
     for(i=0;i<c->n;++i) {
+      UPC_POLL;
       const size_t len = c->size[i]*unit_size;
       if (!c->flg[i]) {
 	const int thrd = c->p[i];
@@ -736,7 +738,7 @@ static void cr_exec(
                stage[k].p1, comm->np+k);
     comm_wait(&req[0],1+stage[k].nrecvn);
 #elif __UPC__
-    while(comm->flgs[stage[k].p1] != (k - 1)) ;
+    while(comm->flgs[stage[k].p1] != (k - 1)) UPC_POLL;
     upc_memput(comm->buf_dir[stage[k].p1], sendbuf, 
 	       unit_size*stage[k].size_s);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
@@ -747,7 +749,7 @@ static void cr_exec(
     comm->flgs[stage[k].p1] = -2;
 #endif
 
-    while(comm->flgs[MYTHREAD] != -2) ;
+    while(comm->flgs[MYTHREAD] != -2) UPC_POLL;
     memcpy(buf_new, comm->buf, unit_size*stage[k].size_r1);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
@@ -940,7 +942,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     comm_isend(&req[0],comm,nsend,2*sizeof(uint),stage->p1,tag);
     comm_wait(req,1+stage->nrecvn),++tag;
 #elif __UPC__
-    while(comm->flgs[stage->p1] != (st - 1)) ;
+    while(comm->flgs[stage->p1] != (st - 1)) UPC_POLL;
     upc_memput(comm->buf_dir[stage->p1], nsend, 2 * sizeof(uint));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
@@ -949,7 +951,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
 #else
     comm->flgs[stage->p1] = -2;
 #endif
-    while(comm->flgs[MYTHREAD] != -2) ;
+    while(comm->flgs[MYTHREAD] != -2) UPC_POLL;
     memcpy(nrecv[0], comm->buf, 2 * sizeof(uint));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
@@ -979,7 +981,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     comm_wait(req,1+stage->nrecvn),++tag;
 #elif __UPC__
     sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
-    while(comm->flgs[stage->p1] != -3) ;
+    while(comm->flgs[stage->p1] != -3) UPC_POLL;
     upc_memput(comm->buf_dir[stage->p1], wsend, nsend[0]*sizeof(struct crl_id));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
@@ -989,7 +991,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     comm->flgs[stage->p1] = -4;
 #endif
 
-    while(comm->flgs[MYTHREAD] != -4) ;
+    while(comm->flgs[MYTHREAD] != -4) UPC_POLL;
     memcpy(wrecv[0], comm->buf, nsend[0]*sizeof(struct crl_id));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 

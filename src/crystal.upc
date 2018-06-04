@@ -97,7 +97,7 @@ static uint crystal_move(struct crystal *cr, uint cutoff, int send_hi)
   comm_alloc(cr->comm, n * sizeof(uint));
   send = (unsigned int*) cr->comm->buf;
 
-  while(cr->size[MYTHREAD] > 0) ;
+  while(cr->size[MYTHREAD] > 0) UPC_POLL;
 #endif
 
   if(send_hi) { /* send hi, keep lo */
@@ -205,7 +205,7 @@ void crystal_router(struct crystal *cr)
     nl = (n+1)/2, bh = bl+nl;
     send_hi = id<bh;
     recvn = 1, targ = n-1-(id-bl)+bl;
-    while(cr->comm->flgs[targ] != (tag - 2)) ;
+    while(cr->comm->flgs[targ] != (tag - 2)) UPC_POLL;
     send_n = crystal_move(cr,bh,send_hi);
     
     if(id==targ) targ=bh, recvn=0;
@@ -217,7 +217,7 @@ void crystal_router(struct crystal *cr)
 #else
     cr->comm->flgs[targ] = -3;
 #endif
-    while(cr->comm->flgs[MYTHREAD] != -3) ;
+    while(cr->comm->flgs[MYTHREAD] != -3) UPC_POLL;
     crystal_exchange(cr,send_n,targ,recvn,tag);
 
     if(id<bh) n=nl; else n-=nl,bl=bh;

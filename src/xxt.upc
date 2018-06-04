@@ -216,7 +216,7 @@ static void discover_sep_sizes(struct xxt *data,
     sint other = data->pother[lvl];
     unsigned s = ns-(lvl+1);
     if(other<0) {
-      while(data->comm->flgs[-other-1] != (lvl-1)) ;
+      while(data->comm->flgs[-other-1] != (lvl-1)) UPC_POLL;
       upc_memput(data->comm->buf_dir[-other-1], v+lvl+1, s*sizeof(float));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -226,7 +226,7 @@ static void discover_sep_sizes(struct xxt *data,
       data->comm->flgs[-other-1] = -2;
 #endif
     } else {
-      while(data->comm->flgs[MYTHREAD] != -2) ;   
+      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
       memcpy(recv+lvl+1, data->comm->buf, s*sizeof(float));
       for(i=lvl+1;i<ns;++i) v[i]+=recv[i];
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
@@ -243,7 +243,7 @@ static void discover_sep_sizes(struct xxt *data,
     sint other = data->pother[--lvl];
     unsigned s = ns-(lvl+1);
     if(other<0) {
-      while(data->comm->flgs[MYTHREAD] != -2) ;
+      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
       memcpy(v+lvl+1, data->comm->buf, s*sizeof(float));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -254,7 +254,7 @@ static void discover_sep_sizes(struct xxt *data,
 #endif
     }
     else {
-      while(data->comm->flgs[other] != (lvl - 1)) ;
+      while(data->comm->flgs[other] != (lvl - 1)) UPC_POLL;
       upc_memput(data->comm->buf_dir[other], v+lvl+1, s*sizeof(float));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -389,7 +389,7 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
     for(lvl=0;lvl<nl;++lvl) {
       sint other = data->pother[lvl];
       if(other<0) {
-	while(data->comm->flgs[-other-1] != (lvl-1)) ;
+	while(data->comm->flgs[-other-1] != (lvl-1)) UPC_POLL;
 	upc_memput(data->comm->buf_dir[-other-1], p, size*sizeof(ulong));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
 	upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -399,7 +399,7 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
 	data->comm->flgs[-other-1] = -2;
 #endif
       } else {
-	while(data->comm->flgs[MYTHREAD] != -2) ;
+	while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
         merge_sep_ids(data,p,(ulong *) data->comm->buf,work,lvl+1,buf);
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
 	upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -426,7 +426,7 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
     for(;;) {
       sint other = data->pother[lvl];
       if(other<0) {
-	while(data->comm->flgs[MYTHREAD] != -2) ;
+	while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
 	memcpy(p, data->comm->buf, size*sizeof(ulong));
 
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
@@ -439,7 +439,7 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
 #endif
       }
       else {
-	while(data->comm->flgs[other] != lvl) ;
+	while(data->comm->flgs[other] != lvl) UPC_POLL;
 	upc_memput(data->comm->buf_dir[other], p, size*sizeof(ulong));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
 	upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -486,7 +486,7 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[-other-1] != (lvl-1)) ;
+      while(data->comm->flgs[-other-1] != (lvl-1)) UPC_POLL;
       upc_memput(data->comm->buf_dir[-other-1], p, size*sizeof(double));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -496,7 +496,7 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
       data->comm->flgs[-other-1] = -2;
 #endif
     } else {
-      while(data->comm->flgs[MYTHREAD] != -2);
+      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
       memcpy(recv, data->comm->buf, size * sizeof(double));
       uint i;
       for(i=0;i<size;++i) p[i]+=recv[i];
@@ -525,7 +525,7 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
   for(;;) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[MYTHREAD] != -2) ;
+      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
       memcpy(p, data->comm->buf, size*sizeof(double));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       const unsigned lvl_st = lvl -1 ;
@@ -536,7 +536,7 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
       data->comm->flgs[MYTHREAD] = lvl - 1;
 #endif
     } else {
-      while(data->comm->flgs[other] != lvl) ;
+      while(data->comm->flgs[other] != lvl) UPC_POLL;
       upc_memput(data->comm->buf_dir[other], p, size*sizeof(double));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -575,7 +575,7 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[-other-1] != (lvl - 1)) ;
+      while(data->comm->flgs[-other-1] != (lvl - 1)) UPC_POLL;
       upc_memput(data->comm->buf_dir[-other-1], &v, sizeof(double));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
@@ -585,7 +585,7 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
       data->comm->flgs[-other-1] = -2;
 #endif
     } else {
-      while(data->comm->flgs[MYTHREAD] != -2) ;
+      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
       memcpy(&r, data->comm->buf, sizeof(double));
       v+=r;
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
@@ -614,7 +614,7 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
   for(;;) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[MYTHREAD] != -2) ;
+      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
       memcpy(&v, data->comm->buf, sizeof(double));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       const unsigned lvl_st = lvl -1 ;
@@ -625,7 +625,7 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
       data->comm->flgs[MYTHREAD] = lvl - 1;
 #endif
     } else {
-      while(data->comm->flgs[other] != lvl) ;
+      while(data->comm->flgs[other] != lvl) UPC_POLL;
       upc_memput(data->comm->buf_dir[other], &v, sizeof(double));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
       upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
