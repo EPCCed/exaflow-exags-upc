@@ -195,7 +195,7 @@ static void discover_sep_sizes(struct xxt *data,
   buffer_reserve(buf,2*ns*sizeof(float));
   v=buf->ptr, recv=v+ns;
 
-  comm_alloc(data->comm, 2*ns*sizeof(float));
+  comm_alloc(data->comm, 4*ns*sizeof(float));
 
     
   for(i=0;i<ns;++i) v[i]=0;
@@ -371,7 +371,7 @@ static sint *discover_sep_ids(struct xxt *data, struct array *dofa, buffer *buf)
   
   init_sep_ids(data,dofa,xid);
 
-  comm_alloc(data->comm, 2*xn+2*size * sizeof(ulong));
+  comm_alloc(data->comm, 4*xn+4*size * sizeof(ulong));
 
   if(nl) {
 
@@ -468,83 +468,49 @@ static void apply_QQt(struct xxt *data, double *v, uint n, uint tag)
   double *p=v, *recv=data->combuf;
   unsigned lvl, nsend=0;
   uint size=n, ss;
-  const int st[2] = {-1, -2};
+  const int flg = 0;
 
   if(n==0 || nl==0) return;
-
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-  upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-		    (shared void *) &data->comm->flgs[MYTHREAD], 
-		    &st[0], 0);
-#else
-  data->comm->flgs[MYTHREAD] = -1;
-#endif
-  upc_barrier;  
 
   tag=tag*2+0;
   /* fan-in */
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[-other-1] != (lvl-1)) UPC_POLL;
-      upc_memput(data->comm->buf_dir[-other-1], p, size*sizeof(double));
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[-other-1], 
-			&st[1], 0);
-#else
-      data->comm->flgs[-other-1] = -2;
-#endif
+      flgs_buf fdir = data->comm->flgs_dir[-other-1][MYTHREAD];
+      while(fdir[1] != 0) UPC_POLL;
+      upc_memput(data->comm->thrds_dir[-other-1][MYTHREAD],
+		 p, size*sizeof(double));
+      fdir[1] = -1;
     } else {
-      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
-      memcpy(recv, data->comm->buf, size * sizeof(double));
+      flgs_buf fdir = data->comm->flg_buf[other];
+      while(fdir[1] != -1) UPC_POLL;
+      thrds_buf tdir = data->comm->thrd_buf[other];	
+      upc_memget(recv, tdir, size * sizeof(double));
+      upc_memput(&fdir[1], &flg, sizeof(int));
       uint i;
-      for(i=0;i<size;++i) p[i]+=recv[i];
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[MYTHREAD], 
-			&lvl, 0);
-#else
-      data->comm->flgs[MYTHREAD] = lvl;
-#endif
+      for(i=0;i<size;++i) p[i]+=recv[i];      
     }
     ss=data->sep_size[lvl+1];
     if(ss>=size || lvl==nl-1) break;
     p+=ss, size-=ss;
   }
 
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-  upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-		    (shared void *) &data->comm->flgs[MYTHREAD], 
-		    &lvl, 0);
-#else
-  data->comm->flgs[MYTHREAD] = lvl;
-#endif
-
   /* fan-out */
   for(;;) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
-      memcpy(p, data->comm->buf, size*sizeof(double));
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      const unsigned lvl_st = lvl -1 ;
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[MYTHREAD], 
-			&lvl_st, 0);
-#else
-      data->comm->flgs[MYTHREAD] = lvl - 1;
-#endif
+      flgs_buf fdir = data->comm->flg_buf[-other-1];
+      while(fdir[1] != 1) UPC_POLL;
+      thrds_buf tdir = data->comm->thrd_buf[-other-1];	
+      upc_memget(p, tdir, size*sizeof(double));
+      upc_memput(&fdir[1], &flg, sizeof(int));
     } else {
-      while(data->comm->flgs[other] != lvl) UPC_POLL;
-      upc_memput(data->comm->buf_dir[other], p, size*sizeof(double));
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[other], 
-			&st[1], 0);
-#else
-      data->comm->flgs[other] = -2;
-#endif
+      flgs_buf fdir = data->comm->flgs_dir[other][MYTHREAD];
+      while(fdir[1] != 0) UPC_POLL;
+      upc_memput(data->comm->thrds_dir[other][MYTHREAD],
+		 p, size*sizeof(double));
+      fdir[1] = 1;
     }
     if(lvl==0) break;
     ss=data->sep_size[lvl];
@@ -558,82 +524,47 @@ static double sum(struct xxt *data, double v, uint n, uint tag)
   double r;
   unsigned lvl,nsend=0;
   uint size=n, ss;
-  const int st[2] = {-1,-2};
+  const int flg = 0;
   
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-  upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-		    (shared void *) &data->comm->flgs[MYTHREAD], 
-		    &st[0], 0);
-#else
-  data->comm->flgs[MYTHREAD] = -1;
-#endif
-  upc_barrier;  
-
   tag=tag*2+1;
   if(n==0 || nl==0) return v;
   /* fan-in */
   for(lvl=0;lvl<nl;++lvl) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[-other-1] != (lvl - 1)) UPC_POLL;
-      upc_memput(data->comm->buf_dir[-other-1], &v, sizeof(double));
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[-other-1], 
-			&st[1], 0);
-#else
-      data->comm->flgs[-other-1] = -2;
-#endif
+      flgs_buf fdir = data->comm->flgs_dir[-other-1][MYTHREAD];
+      while(fdir[0] != 0) UPC_POLL;
+      upc_memput(data->comm->thrds_dir[-other-1][MYTHREAD],
+		 &v, sizeof(double));
+      fdir[0] = -1;
     } else {
-      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
-      memcpy(&r, data->comm->buf, sizeof(double));
+      flgs_buf fdir = data->comm->flg_buf[other];
+      while(fdir[0] != -1) UPC_POLL;
+      thrds_buf tdir = data->comm->thrd_buf[other];	
+      upc_memget(&r, tdir, sizeof(double));
+      upc_memput(fdir, &flg, sizeof(int));
       v+=r;
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[MYTHREAD], 
-			&lvl, 0);
-#else
-      data->comm->flgs[MYTHREAD] = lvl;
-#endif
-
     }
     ss=data->sep_size[lvl+1];
     if(ss>=size || lvl==nl-1) break;
     size-=ss;
   }
 
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-  upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-		    (shared void *) &data->comm->flgs[MYTHREAD], 
-		    &lvl, 0);
-#else
-  data->comm->flgs[MYTHREAD] = lvl;
-#endif
-
   /* fan-out */
   for(;;) {
     sint other = data->pother[lvl];
     if(other<0) {
-      while(data->comm->flgs[MYTHREAD] != -2) UPC_POLL;
-      memcpy(&v, data->comm->buf, sizeof(double));
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      const unsigned lvl_st = lvl -1 ;
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[MYTHREAD], 
-			&lvl_st, 0);
-#else
-      data->comm->flgs[MYTHREAD] = lvl - 1;
-#endif
+      flgs_buf fdir = data->comm->flg_buf[-other-1];
+      while(fdir[0] != 1) UPC_POLL;
+      thrds_buf tdir = data->comm->thrd_buf[-other-1];	
+      upc_memget(&v, tdir, sizeof(double));
+      upc_memput(fdir, &flg, sizeof(int));
     } else {
-      while(data->comm->flgs[other] != lvl) UPC_POLL;
-      upc_memput(data->comm->buf_dir[other], &v, sizeof(double));
-#if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
-      upc_atomic_strict(data->comm->upc_domain, NULL, UPC_SET, 
-			(shared void *) &data->comm->flgs[other], 
-			&st[1], 0);
-#else
-      data->comm->flgs[other] = -2;
-#endif
+      flgs_buf fdir = data->comm->flgs_dir[other][MYTHREAD];
+      while(fdir[0] != 0) UPC_POLL;
+      upc_memput(data->comm->thrds_dir[other][MYTHREAD],
+		 &v, sizeof(double));
+      fdir[0] = 1;
     }
     if(lvl==0) break;
     ss=data->sep_size[lvl];
@@ -685,7 +616,7 @@ static void discover_dofs(
   buffer_reserve(buf,cn*sizeof(ulong)), bid=buf->ptr;
   for(i=0;i<n;++i) if(perm[i]>=0) bid[perm[i]]=dof[perm[i]].id=id[i];
 
-  gsh = gs_setup((const slong*)bid,cn,comm,0,gs_crystal_router,0);
+  gsh = gs_setup((const slong*)bid,cn,comm,0,gs_pairwise,0);
   v = tmalloc(sint,cn);
 
   for(i=0;i<cn;++i) v[i]=pcoord;
@@ -935,7 +866,7 @@ struct xxt *crs_setup(
 
   discover_dofs(data,n,id,&dofa,&buf,data->comm);
   discover_sep_sizes(data,&dofa,&buf);
-
+  comm_alloc_thrd_buf(data->comm, sizeof(double), 2);
   perm_x2c = discover_sep_ids(data,&dofa,&buf);
   if(data->null_space) {
     uint i; double count = 0; struct dof *dof = dofa.ptr;
@@ -968,6 +899,8 @@ struct xxt *crs_setup(
   data->vx = data->vc+data->cn;
   data->combuf = data->vx+data->xn;
 
+  comm_alloc_thrd_buf(data->comm, 
+		      (data->xn+THREADS)*sizeof(double), 2);
   orthogonalize(data,&A_ss,perm_x2c,&buf);
   free(A_ss.Arp); free(A_ss.A);
   free(perm_x2c);
