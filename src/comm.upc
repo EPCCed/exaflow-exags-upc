@@ -186,7 +186,7 @@ int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs)
   
   if (cp->thrd_buf_len > 0) {
     for (i = 0; i < np; i++) 
-      upc_free(cp->thrd_buf[i]);
+      upc_free(cp->thrds_dir[id][i]);
   }
 
   for (i = 0; i < np; i++) {
