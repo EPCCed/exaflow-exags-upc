@@ -22,25 +22,18 @@
 // Global declarations
 // Each element in msg_queue is a pointer to a struct message
 // msg_queue[i]->next points to the next msg in a linked list.
-#ifdef __UPC__
 static struct message *shared msg_queue[THREADS];
 
 // An array of locks to allow for atomic updates of the message queues
 
 static upc_lock_t *shared msg_queue_lock[THREADS];
 
-#endif
 
 comm_ptr glb_comm = NULL;
 
 // Initialise Comms methods
 void comm_init()
 {
-
-#ifdef MPI
-  MPI_Init(0,0);
-  
-#elif __UPC__
 
   // TODO: add back once proper ifdefs are in place
 
@@ -53,7 +46,6 @@ void comm_init()
   if (glb_comm == NULL) 
     comm_world(&glb_comm);
 
-#endif
 }
 
 
@@ -62,9 +54,6 @@ void comm_init()
 // Note, does not iterate through the msg_queue to verify that *msg_queue[i]->next is NULL
 void comm_finalize()
 {
-#ifdef MPI
-  MPI_Finalize();
-#elif __UPC__
 
   // TODO: add back once proper ifdefs are in place
 
@@ -77,7 +66,7 @@ void comm_finalize()
   //  upc_lock_free(msg_queue_lock[MYTHREAD]);
   //  msg_queue_lock[MYTHREAD] = NULL;
   //  upc_barrier;
-#endif
+
 }
 
 
@@ -86,9 +75,6 @@ void comm_finalize()
 
 int comm_alloc(comm_ptr cp, size_t n)
 {
-#ifdef MPI
-  return 0;
-#elif __UPC__
   int id = cp->id;
   int np = cp->np;
   shared[] char *tmp;
@@ -148,14 +134,10 @@ int comm_alloc(comm_ptr cp, size_t n)
 #endif
 
   return 0;
-#endif
 }
 
 int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs)
 {
-#ifdef MPI
-  return 0;
-#elif __UPC__
   int id = cp->id;
   int np = cp->np;
   int i, j;
@@ -199,12 +181,10 @@ int comm_alloc_thrd_buf(comm_ptr cp, size_t n, int n_flgs)
   cp->thrd_buf_len = n;
 
   return 0;
-#endif
 }
 
 int comm_alloc_coll_buf(comm_ptr cp, size_t n) {
 
-#ifdef __UPC__
 
   // Sanitise inputs based on what's in cp's members
   if (n <= 0) {
@@ -233,7 +213,6 @@ int comm_alloc_coll_buf(comm_ptr cp, size_t n) {
   upc_barrier;
   cp->col_buf_len = n;
 
-#endif    
 
 }
 
@@ -250,11 +229,6 @@ void comm_world(comm_ptr *cpp)
   if (NULL != cp) {
     // manual says: MPI_Comm_rank fills 2nd arg with the rank of *this* process in the 1st arg
     // ie, what rank am I
-#ifdef MPI
-    cp->h = MPI_COMM_WORLD;
-    MPI_Comm_size(cp->h,&(cp->np));
-    MPI_Comm_rank(cp->h,&(cp->id));
-#elif __UPC__
     cp->h = 0;
     cp->id = MYTHREAD;
     cp->np = THREADS;  
@@ -273,11 +247,6 @@ void comm_world(comm_ptr *cpp)
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     cp->upc_domain = upc_all_atomicdomain_alloc(UPC_INT, UPC_SET, 0);
 #endif
-#else
-    cp->h = 0;
-    cp->np = 0;
-    cp->id = -1;
-#endif
 
     *cpp = cp;
   }
@@ -291,16 +260,9 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
   comm_ptr cpd = (comm_ptr) malloc(sizeof (struct comm));
 
   if (NULL != cpd) {
-#ifdef MPI
-    MPI_Comm_dup(cp->h, &(cpd->h));
-#else
     cpd->h = cp->h;
-#endif
-
     cpd->np = cp->np;
     cpd->id = cp->id;
-
-#ifdef __UPC__
     cpd->buf_len = cp->buf_len;
     cpd->buf_dir = cp->buf_dir;
     cpd->buf = cp->buf;
@@ -316,7 +278,6 @@ void comm_dup(comm_ptr *cpp, const comm_ptr cp)
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
     cpd->upc_domain = cp->upc_domain;
 #endif
-#endif
 
     *cpp = cpd;
   }
@@ -331,9 +292,6 @@ void comm_free(comm_ptr *cpp)
   comm_ptr cp = *cpp;
 
   if (NULL != cp) {
-#ifdef MPI
-    MPI_Comm_free(&(cp->h));
-#elif __UPC__
     if (!(*cp->ref_count)) { 
       upc_barrier;
       if (cp->buf_dir != NULL) {
@@ -393,7 +351,6 @@ void comm_free(comm_ptr *cpp)
     else {
       (*cp->ref_count)--;
     }
-#endif
     free(cp);
     *cpp = NULL;
   }
@@ -418,57 +375,35 @@ void comm_id(const comm_ptr cp, int *id)
 // Helper function to get the correct type information for the comms lib for int
 void comm_type_int(comm_type *ct)
 {
-#ifdef MPI
-  *ct = MPI_INTEGER;
-#elif __UPC__
   *ct = UPC_INT;
-#endif
 }
 
 // Helper function to get the correct type information for the comms lib for int8
 void comm_type_int8(comm_type *ct)
 {
   if (NULL == ct) return;
-#ifdef MPI
-  *ct = MPI_INTEGER8;
-#elif __UPC__
   *ct = UPC_INT64;
-#endif
 }
 
 // Helper function to get the correct type information for the comms lib for real
 void comm_type_real(comm_type *ct)
 {
   if (NULL == ct) return;
-#ifdef MPI
-  *ct = MPI_REAL;
-#elif __UPC__
   *ct = UPC_FLOAT;
-#endif
 }
 
 // Helper function to get the correct type information for the comms lib for dp
 void comm_type_dp(comm_type *ct)
 {
   if (NULL == ct) return;
-#ifdef MPI
-  *ct = MPI_DOUBLE_PRECISION;
-#elif __UPC__
   *ct = UPC_DOUBLE;
-#endif
 }
 
 // Helper function to get the correct tag information from the comms lib for UB, MPI ONLY
 void comm_tag_ub(const comm_ptr cp, int *ub)
 {
   if (NULL == cp || NULL == ub) return;
-#ifdef MPI
-  int val = 0, flag = 0;
-  MPI_Attr_get(cp->h,MPI_TAG_UB,&val,&flag);
-  *ub = val;
-#else
   *ub = 0;
-#endif
 }
 
 
@@ -485,11 +420,7 @@ void comm_time(double *tm)
 void comm_barrier(const comm_ptr cp)
 {
   if (NULL == cp) return;
-#ifdef MPI
-  MPI_Barrier(cp->h);
-#elif __UPC__
   upc_barrier;
-#endif
 }
 
 // Broadcast n BYTES from root to other processes
@@ -497,9 +428,6 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
 {
   if (NULL == cp || NULL == p) return;
   
-#ifdef MPI
-  MPI_Bcast(p,n,MPI_BYTE,root,cp->h);
-#elif __UPC__
   n = n*sizeof(char);
 
   // Make a temporary space of size np*n (bytes)
@@ -530,7 +458,6 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
   }
 
   upc_all_free(dst);
-#endif
 }
 
 
@@ -538,9 +465,6 @@ void comm_bcast(const comm_ptr cp, void *p, size_t n, uint root)
 // This seems whack, doing a send/recv using a single sided model...
 void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag)
 {
-#ifdef MPI
-  MPI_Send(p,n,MPI_UNSIGNED_CHAR,dst,tag,cp->h);
-#elif __UPC__ 
 
   // Make space for a message, locally affine but in shared space, not collective
   struct message *msg = (struct message*) upc_alloc(sizeof(struct message));
@@ -572,20 +496,11 @@ void comm_send(const comm_ptr cp, void *p, size_t n, uint dst, int tag)
   
   upc_unlock(msg_queue_lock[dst]);
   
-#endif
 }
 
 // Implementation of MPI_Recv in UPC...
 void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
 {
-#ifdef MPI
-# ifndef MPI_STATUS_IGNORE
-  MPI_Status stat;
-  MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,&stat);
-# else  
-  MPI_Recv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,MPI_STATUS_IGNORE);
-# endif
-#elif __UPC__
 
   upc_lock(msg_queue_lock[MYTHREAD]);
 
@@ -628,7 +543,6 @@ void comm_recv(const comm_ptr cp, void *p, size_t n, uint src, int tag)
   
   upc_unlock(msg_queue_lock[MYTHREAD]);  
   
-#endif
 }
 
 
@@ -640,57 +554,13 @@ GS_DEFINE_IDENTITIES()
 GS_DEFINE_DOM_SIZES()
 
 // Implementation of SCAN
+// We should be clear about exactly which implementation of SCAN this is.
 static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                      const void *v, uint vn, void *buffer)
 {
-#ifdef HAVE_MPI
   // If comms handle invalid, quit
   if (NULL == cp) return;
 
-  // We should be clear about exactly which implementation of SCAN this is.
-  comm_req req[2];
-  size_t vsize = vn*gs_dom_size[dom];
-  const uint id=cp->id, np=cp->np;
-  uint n = np, c=1, odd=0, base=0;
-  void *buf[2];
-  void *red = (char*)scan+vsize;
-  buf[0]=buffer,buf[1]=(char*)buffer+vsize;
-  while(n>1) {
-    odd=(odd<<1)|(n&1);
-    c<<=1, n>>=1;
-    if(id>=base+n) c|=1, base+=n, n+=(odd&1);
-  }
-  gs_init_array(scan,vn,dom,op);
-  memcpy(red,v,vsize);
-  while(n<np) {
-    if(c&1) n-=(odd&1), base-=n;
-    c>>=1, n<<=1, n+=(odd&1);
-    odd>>=1;
-    if(base==id) {
-      comm_irecv(&req[0],cp, buf[0],vsize, id+n/2,id+n/2);
-      comm_isend(&req[1],cp, red   ,vsize, id+n/2,id);
-      comm_wait(req,2);
-      gs_gather_array(red,buf[0],vn,dom,op);
-    } else {
-      comm_irecv(&req[0],cp, scan,vsize, base,base);
-      comm_isend(&req[1],cp, red ,vsize, base,id);
-      comm_wait(req,2);
-      break;
-    }
-  }
-  while(n>1) {
-    if(base==id) {
-      comm_send(cp, scan  ,2*vsize, id+n/2,id);
-    } else {
-      comm_recv(cp, buffer,2*vsize, base,base);
-      gs_gather_array(scan,buf[0],vn,dom,op);
-      memcpy(red,buf[1],vsize);
-    }
-    odd=(odd<<1)|(n&1);
-    c<<=1, n>>=1;
-    if(id>=base+n) c|=1, base+=n, n+=(odd&1);
-  }
-#elif __UPC__
   int d;
   uint D;
   size_t vsize = vn*gs_dom_size[dom]; 
@@ -741,46 +611,14 @@ static void scan_imp(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
 
   upc_barrier;
   comm_allreduce(cp, dom, op, (void*)v, vn, red);  
-#endif
 }
 
 // Allreduce
 static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
                           void *v, uint vn, void *buf)
 {
-#ifdef HAVE_MPI
   if (NULL == cp) return;
   
-  size_t total_size = vn*gs_dom_size[dom];
-  const uint np=cp->np, id=cp->id;
-  uint n = np, c=1, odd=0, base=0;
-  while(n>1) {
-    odd=(odd<<1)|(n&1);
-    c<<=1, n>>=1;
-    if(id>=base+n) c|=1, base+=n, n+=(odd&1);
-  }
-  while(n<np) {
-    if(c&1) n-=(odd&1), base-=n;
-    c>>=1, n<<=1, n+=(odd&1);
-    odd>>=1;
-    if(base==id) {
-      comm_recv(cp, buf,total_size, id+n/2,id+n/2);
-      gs_gather_array(v,buf,vn, dom,op);
-    } else {
-      comm_send(cp, v,total_size, base,id);
-      break;
-    }
-  }
-  while(n>1) {
-    if(base==id)
-      comm_send(cp, v,total_size, id+n/2,id);
-    else
-      comm_recv(cp, v,total_size, base,base);
-    odd=(odd<<1)|(n&1);
-    c<<=1, n>>=1;
-    if(id>=base+n) c|=1, base+=n, n+=(odd&1);
-  }
-#elif __UPC__
   int np = cp->np, id = cp->id;
   uint D, d, i;
   const int st[5] = {-1, -2, -5, -10, -20};
@@ -862,17 +700,12 @@ static void allreduce_imp(const comm_ptr cp, gs_dom dom, gs_op op,
   }
   
   memcpy(v,buf,vn*gs_dom_size[dom]);
-#endif
 }
 
 // Helper function to call scan on a communicator
 void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
                const void *v, uint vn, void *buffer)
 {
-
-#ifdef MPI
-  goto comm_scan_byhand;
-#elif __UPC__
 
   if (vn > 1) goto comm_scan_byhand;
 
@@ -962,12 +795,9 @@ void comm_scan(void *scan, const comm_ptr cp, gs_dom dom, gs_op op,
     upc_memget(red, cp->col_buf + MYTHREAD * vn, vn*gs_dom_size[dom]);
   upc_barrier;
   return;
-#endif
-
-#if (defined MPI || defined __UPC__)
+  
  comm_scan_byhand:
   scan_imp(scan, cp,dom,op, v,vn, buffer);
-#endif
 }
 
 // Helper function to call allreduce on a communicator with a TYPE
@@ -980,17 +810,10 @@ void comm_allreduce_cdom(const comm_ptr cp, comm_type cdom, gs_op op,
   int dom_ok = 1;
 
   switch(cdom) {
-#ifdef MPI
-    case MPI_INTEGER:          dom = gs_int; break;
-    case MPI_INTEGER8:         dom = gs_long; break;
-    case MPI_REAL:             dom = gs_float; break;
-    case MPI_DOUBLE_PRECISION: dom = gs_double; break;
-#elif __UPC__
     case UPC_INT:    dom = gs_int; break;
     case UPC_INT64:  dom = gs_long; break;
     case UPC_FLOAT:  dom = gs_float; break;
     case UPC_DOUBLE: dom = gs_double; break;
-#endif
     default: dom_ok = 0;
   }
 
@@ -1010,35 +833,6 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
 {
   if (NULL == cp || 0 == vn) return;
     
-#ifdef MPI
-  {
-    MPI_Datatype mpitype;
-    MPI_Op mpiop;
-    #define DOMAIN_SWITCH() do { \
-      switch(dom) { case gs_double:    mpitype=MPI_DOUBLE;    break; \
-                    case gs_float:     mpitype=MPI_FLOAT;     break; \
-                    case gs_int:       mpitype=MPI_INT;       break; \
-                    case gs_long:      mpitype=MPI_LONG;      break; \
-     WHEN_LONG_LONG(case gs_long_long: mpitype=MPI_LONG_LONG; break;) \
-                  default:        goto comm_allreduce_byhand; \
-      } \
-    } while(0)
-    DOMAIN_SWITCH();
-    #undef DOMAIN_SWITCH
-    switch(op) { case gs_add: mpiop=MPI_SUM;  break;
-                 case gs_mul: mpiop=MPI_PROD; break;
-                 case gs_min: mpiop=MPI_MIN;  break;
-                 case gs_max: mpiop=MPI_MAX;  break;
-                 default:        goto comm_allreduce_byhand;
-    }
-    MPI_Allreduce(v,buf,vn,mpitype,mpiop,cp->h);
-    memcpy(v,buf,vn*gs_dom_size[dom]);
-    return;
-  }
-  
-#elif __UPC__
-  
-
 #ifdef HAVE_UPC_COLLECTIVE_CRAY_H
   cray_upc_dtype_t upc_type;
 
@@ -1150,12 +944,9 @@ void comm_allreduce(const comm_ptr cp, gs_dom dom, gs_op op,
   memcpy(buf, v, vn * gs_dom_size[dom]);
   return;
 #endif
-#endif
 
-#if (defined MPI || defined __UPC__)
 comm_allreduce_byhand:
   allreduce_imp(cp,dom,op, v,vn, buf);
-#endif
 }
 
 // Helper to call comm_allreduce with value of tensor_dot
