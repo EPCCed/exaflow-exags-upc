@@ -8,32 +8,14 @@
 #include <comm.h>
 
 
-#ifdef MPI
-#include <mpi.h>
-#endif
-
-
 #ifdef HAVE_CHECK
 
 #include <check.h>
 
 void setup() {
-  int rank;
-#ifdef MPI
-  MPI_Init(NULL, NULL);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#elif __UPC__
-  rank = MYTHREAD;
-#endif
-  //  if (rank > 0)
-    //    freopen ("/dev/null", "w", stdout);
 }
 
 void teardown() {
-#ifdef MPI
-  MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Finalize();  
-#endif
 }
 
 START_TEST(test_init) {
@@ -44,18 +26,12 @@ START_TEST(test_init) {
 
   comm_world(&cp);
 
-
-#ifdef MPI
-  MPI_Comm_size(cp->h, &np);
-  fail_unless(cp->np == np);  
-#elif defined(__UPC__)
   fail_unless(cp->np == THREADS);
   fail_unless(cp->id == MYTHREAD);
   fail_unless(cp->buf_dir == NULL);
   fail_unless(cp->buf == NULL);
   fail_unless(cp->buf_len == 0);
   fail_unless(cp->flgs == NULL);
-#endif
 
 } END_TEST
 
@@ -66,7 +42,6 @@ START_TEST(test_alloc) {
 
   comm_init();
   comm_world(&cp);
-#ifdef __UPC__
 
   n = 42 * sizeof(char);  
   comm_alloc(cp, n);
@@ -97,7 +72,7 @@ START_TEST(test_alloc) {
 
   for (i = 0; i < 42; i++)
     fail_unless(cp->buf[i] == 1);
-#endif
+
 } END_TEST
 
 START_TEST(test_alloc_thrd_buf) {
@@ -108,7 +83,6 @@ START_TEST(test_alloc_thrd_buf) {
   comm_init();
 
   comm_world(&cp);
-#ifdef __UPC__
 
   memset(data, cp->id, 10 * sizeof(int));
   comm_alloc_thrd_buf(cp, 10 * sizeof(int), 1);
@@ -118,7 +92,7 @@ START_TEST(test_alloc_thrd_buf) {
   for (i = 0; i < cp->np; i++)
     for (j = 0; j < 10; j++)
       fail_unless(cp->thrd_buf[i][j] == i);
-#endif
+
 } END_TEST
 
 

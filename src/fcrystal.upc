@@ -97,12 +97,8 @@ void fcrystal_setup(sint *handle, const int *comm, const sint *np) /* Badness...
   buffer_init(&p->data,1000);
   buffer_init(&p->work,1000);
   *handle = handle_n++;
-#ifdef HAVE_MPI
-
-#elif __UPC__
   comm_alloc(p->comm, 1000 * sizeof(uint));
   p->size = upc_all_alloc(THREADS, sizeof(uint));
-#endif
 }
 
 #define CHECK_HANDLE(func) do \
