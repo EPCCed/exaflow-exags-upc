@@ -10,10 +10,6 @@
 #include <mem.h>
 #include <crs.h>
 
-#ifdef MPI
-#include <mpi.h>
-#endif
-
 #define M 3
 
 #ifdef HAVE_CHECK
@@ -21,22 +17,9 @@
 #include <check.h>
 
 void setup() {
-  int rank;
-#ifdef MPI
-  MPI_Init(NULL, NULL);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#elif __UPC__
-  rank = MYTHREAD;
-#endif
-  //  if (rank > 0)
-    //    freopen ("/dev/null", "w", stdout);
 }
 
 void teardown() {
-#ifdef MPI
-  MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Finalize();  
-#endif
 }
 
 

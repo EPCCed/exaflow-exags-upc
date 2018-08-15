@@ -61,25 +61,11 @@
          
 */
 
-/* Ugly hack for Cray C which always defines UPC even without -hupc */
-#if defined(MPI) && defined(_CRAYC)
-#undef __UPC__
-#endif
-
 typedef struct comm * comm_ptr;
 
-#ifdef __UPC__
 typedef shared[] char *thrds_buf;
 typedef shared[] int volatile *flgs_buf;
-#endif
 
-#ifdef MPI
-#include <mpi.h>
-typedef MPI_Comm comm_hdl;
-typedef MPI_Datatype comm_type;
-typedef MPI_Op comm_op;
-typedef MPI_Request comm_req;
-#elif __UPC__
 #include <upc.h>
 #include <upc_collective.h>
 typedef int comm_hdl;
@@ -104,13 +90,6 @@ typedef int comm_req;
 #else 
 #define UPC_POLL upc_poll()
 #endif
-#else
-typedef int comm_hdl;
-typedef int comm_type;
-typedef int comm_op;
-typedef int comm_req;
-#endif
-
 
 #define comm_init      PREFIXED_NAME(comm_init     )
 #define comm_finalize  PREFIXED_NAME(comm_finalize )
@@ -248,34 +227,20 @@ GS_FOR_EACH_DOMAIN(DEFINE_REDUCE)
 static void comm_irecv(comm_req *req, const comm_ptr cp,
                        void *p, size_t n, uint src, int tag)
 {
-#ifdef MPI
-  MPI_Irecv(p,n,MPI_UNSIGNED_CHAR,src,tag,cp->h,req);
-#endif
+
 }
 
 static void comm_isend(comm_req *req, const comm_ptr cp,
                        void *p, size_t n, uint dst, int tag)
 {
-#ifdef MPI
-  MPI_Isend(p,n,MPI_UNSIGNED_CHAR,dst,tag,cp->h,req);
-#endif
+
 }
 
 static void comm_wait(comm_req *req, int n)
 {
-#ifdef MPI
-# ifndef MPI_STATUSES_IGNORE
-  MPI_Status status[8];
-  while(n>=8) MPI_Waitall(8,req,status), req+=8, n-=8;
-  if(n>0) MPI_Waitall(n,req,status);
-# else
-  MPI_Waitall(n,req,MPI_STATUSES_IGNORE);
-# endif  
-#elif (defined __UPC__ && defined __UPC_NB__)
   int m;
   m = 0;
   while(m<=n) upc_sync(req[m]), m++; /* Replace with upc_sync_attempt */
-#endif
 }
 
 #endif

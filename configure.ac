@@ -4,10 +4,6 @@ AM_MAINTAINER_MODE
 AC_CONFIG_MACRO_DIR([m4])
 AC_LANG(C)
 
-AC_ARG_ENABLE(mpi, AC_HELP_STRING([--enable-mpi],
-              [Compile with support for MPI]),
-              [enable_mpi=${enableval}], [enable_mpi=no])
-
 AC_ARG_ENABLE(check, AC_HELP_STRING([--enable-check], 
               [Compile with support for unit testing, requires libcheck]),
               [enable_check=${enableval}],[enable_check=no])

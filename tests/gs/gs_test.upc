@@ -12,32 +12,14 @@
 #include <gs.h>
 
 
-#ifdef HAVE_MPI
-#include <mpi.h>
-#endif
-
-
 #ifdef HAVE_CHECK
 
 #include <check.h>
 
 void setup() {
-  int rank;
-#ifdef HAVE_MPI
-  MPI_Init(NULL, NULL);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#elif __UPC__
-  rank = MYTHREAD;
-#endif
-  //  if (rank > 0)
-    //    freopen ("/dev/null", "w", stdout);
 }
 
 void teardown() {
-#ifdef HAVE_MPI
-  MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Finalize();  
-#endif
 }
 
 START_TEST(test_setup_pairwise) {

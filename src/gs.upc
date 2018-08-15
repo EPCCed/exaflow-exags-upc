@@ -397,23 +397,15 @@ struct pw_comm_data {
   uint *p;     /* message source/dest proc */
   uint *size;  /* size of message */
   uint total;  /* sum of message sizes */
-#ifdef __UPC__
   char *flg;
-#endif
 };
 
 struct pw_data {
   struct pw_comm_data comm[2];
   const uint *map[2];
   uint buffer_size;
-
-#ifndef __UPC__
-  comm_req *req;
-#endif
-
 };
 
-#ifdef __UPC__
 void pw_exec_recvs(char *buf, const unsigned unit_size, 
 		   struct pw_comm_data *c,  comm_ptr comm)
 		 
@@ -475,35 +467,6 @@ void pw_exec_sends(char *buf, const unsigned unit_size,
   memset(c->flg, 0, THREADS);
 }
 
-#else
-
-static char *pw_exec_recvs(char *buf, const unsigned unit_size,
-                           const comm_ptr comm,
-                           const struct pw_comm_data *c, comm_req *req)
-{
-  const uint *p, *pe, *size=c->size;
-  for(p=c->p,pe=p+c->n;p!=pe;++p) {
-    size_t len = *(size++)*unit_size;
-    comm_irecv(req++,comm,buf,len,*p,*p);
-    buf += len;
-  }
-  return buf;
-}
-
-static char *pw_exec_sends(char *buf, const unsigned unit_size,
-                           const comm_ptr comm,
-                           const struct pw_comm_data *c, comm_req *req)
-{
-  const uint *p, *pe, *size=c->size;
-  for(p=c->p,pe=p+c->n;p!=pe;++p) {
-    size_t len = *(size++)*unit_size;
-    comm_isend(req++,comm,buf,len,*p,comm->id);
-    buf += len;
-  }
-  return buf;
-}
-#endif
-
 static void pw_exec(
   void *data, gs_mode mode, unsigned vn, gs_dom dom, gs_op op,
   unsigned transpose, const void *execdata, const comm_ptr comm, char *buf)
@@ -520,7 +483,6 @@ static void pw_exec(
   int i, j;
 
 
-#ifdef __UPC__
 
   comm_alloc_thrd_buf(comm, pwd->comm[recv].total * unit_size, n_flgs);
 
@@ -532,16 +494,7 @@ static void pw_exec(
 
   /* process receive bufer */
   pw_exec_recvs(buf,unit_size,&pwd->comm[recv], comm);
-#else
-  /* post receives */
-  sendbuf = pw_exec_recvs(buf,unit_size,comm,&pwd->comm[recv],pwd->req);
-  /* fill send buffer */
-  scatter_to_buf[mode](sendbuf,data,vn,pwd->map[send],dom);
-  /* post sends */
-  pw_exec_sends(sendbuf,unit_size,comm,&pwd->comm[send],
-                &pwd->req[pwd->comm[recv].n]);
-  comm_wait(pwd->req,pwd->comm[0].n+pwd->comm[1].n);
-#endif 
+
  /* gather using recv buffer */
   gather_from_buf[mode](data,buf,vn,pwd->map[recv],dom,op);
 }
@@ -566,9 +519,7 @@ static uint pw_comm_setup(struct pw_comm_data *data, struct array *sh,
   data->p = tmalloc(uint,2*n); mem_size+=2*n*sizeof(uint);
   data->size = data->p + n;
   data->total = count;
-#ifdef __UPC__
   data->flg = calloc(THREADS, sizeof(char));
-#endif
   n = 0, lp=-(uint)1;
   for(s=sh->ptr,se=s+sh->n;s!=se;++s) {
     if(s->flags&flags_mask) continue;
@@ -702,7 +653,6 @@ static void cr_exec(
  const int st[2] = {-1,-2};
   buf_old = buf;
   buf_new = buf_old + unit_size*crd->stage_buffer_size;
-#ifdef __UPC__
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
   upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
 		    (shared void *) &comm->flgs[MYTHREAD], 
@@ -710,22 +660,14 @@ static void cr_exec(
 #else
   upc_memput_nbi(&comm->flgs[MYTHREAD], &st[0], sizeof(int));  
 #endif
-#endif
+
   /* crystal router */
   for(k=0;k<nstages;++k) {
-#ifdef HAVE_MPI
-    comm_req req[3];
-    if(stage[k].nrecvn)
-      comm_irecv(&req[1],comm,buf_new,unit_size*stage[k].size_r1,
-               stage[k].p1, comm->np+k);
-    if(stage[k].nrecvn==2)
-      comm_irecv(&req[2],comm,buf_new+unit_size*stage[k].size_r1,
-               unit_size*stage[k].size_r2, stage[k].p2, comm->np+k);
-#endif
     sendbuf = buf_new+unit_size*stage[k].size_r;
     if(k==0) {
       scatter_user_to_buf[mode](sendbuf,data,vn,stage[0].scatter_map,dom);
 #if defined(__UPC__) && !defined(USE_ATOMIC)
+      UPC_POLL;
       upc_synci();
 #endif
     }
@@ -733,11 +675,6 @@ static void cr_exec(
       scatter_buf_to_buf[mode](sendbuf,buf_old,vn,stage[k].scatter_map,dom),
       gather_buf_to_buf [mode](sendbuf,buf_old,vn,stage[k].gather_map ,dom,op);
 
-#ifdef HAVE_MPI
-    comm_isend(&req[0],comm,sendbuf,unit_size*stage[k].size_s,
-               stage[k].p1, comm->np+k);
-    comm_wait(&req[0],1+stage[k].nrecvn);
-#elif __UPC__
     while(comm->flgs[stage[k].p1] != (k - 1)) UPC_POLL;
     upc_memput(comm->buf_dir[stage[k].p1], sendbuf, 
 	       unit_size*stage[k].size_s);
@@ -759,7 +696,6 @@ static void cr_exec(
     comm->flgs[MYTHREAD] = k;
 #endif
 
-#endif
     { char *t = buf_old; buf_old=buf_new; buf_new=t; }
   }
   scatter_buf_to_user[mode](data,buf_old,vn,stage[k].scatter_map,dom);
@@ -917,7 +853,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
   uint tag = comm->np;
   uint st = 0;
   const int flg[4] = {-1, -2, -3, -4};
-#ifdef __UPC__
+
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
   upc_atomic_relaxed(comm->upc_domain, NULL, UPC_SET, 
 		    (shared void *) &comm->flgs[MYTHREAD], 
@@ -926,7 +862,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
   comm->flgs[MYTHREAD] = -1;
 #endif
   upc_barrier;
-#endif
+
   while(n>1) {
     uint nl = (n+1)/2, bh = bl+nl;
     uint nkeep, nsend[2], nrecv[2][2] = {{0,0},{0,0}};
@@ -934,14 +870,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     nsend[0] = crl_work_label(cw,stage,bh,id<bh,buf, mem_size);
     nsend[1] = stage->size_s;
     nkeep = cw->n - nsend[0];
-#ifdef HAVE_MPI
-    if(stage->nrecvn   ) comm_irecv(&req[1],comm,nrecv[0],2*sizeof(uint),
-                                    stage->p1,tag);
-    if(stage->nrecvn==2) comm_irecv(&req[2],comm,nrecv[1],2*sizeof(uint),
-                                    stage->p2,tag);
-    comm_isend(&req[0],comm,nsend,2*sizeof(uint),stage->p1,tag);
-    comm_wait(req,1+stage->nrecvn),++tag;
-#elif __UPC__
+
     while(comm->flgs[stage->p1] != (st - 1)) UPC_POLL;
     upc_memput(comm->buf_dir[stage->p1], nsend, 2 * sizeof(uint));
 #if defined( __UPC_ATOMIC__) && defined(USE_ATOMIC)
@@ -960,7 +889,6 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
 #else
     comm->flgs[MYTHREAD] = -3;
 #endif
-#endif
     stage->size_r1 = nrecv[0][1], stage->size_r2 = nrecv[1][1];
     stage->size_r = stage->size_r1 + stage->size_r2;
     stage->size_total = stage->size_r + stage->size_sk;
@@ -969,17 +897,7 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
     array_reserve(struct crl_id,cw,cw->n+nrecv[0][0]+nrecv[1][0]);
     wrecv[0] = cw->ptr, wrecv[0] += cw->n, wrecv[1] = wrecv[0]+nrecv[0][0];
     wsend = cw->ptr, wsend += nkeep;
-#ifdef HAVE_MPI
-    if(stage->nrecvn   )
-      comm_irecv(&req[1],comm,wrecv[0],nrecv[0][0]*sizeof(struct crl_id),
-                 stage->p1,tag);
-    if(stage->nrecvn==2)
-      comm_irecv(&req[2],comm,wrecv[1],nrecv[1][0]*sizeof(struct crl_id),
-                 stage->p2,tag);
-    sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
-    comm_isend(&req[0],comm,wsend,nsend[0]*sizeof(struct crl_id),stage->p1,tag);
-    comm_wait(req,1+stage->nrecvn),++tag;
-#elif __UPC__
+
     sarray_sort_2(struct crl_id,cw->ptr,cw->n, send,0, bi,0, buf);
     while(comm->flgs[stage->p1] != -3) UPC_POLL;
     upc_memput(comm->buf_dir[stage->p1], wsend, nsend[0]*sizeof(struct crl_id));
@@ -999,7 +917,6 @@ static uint cr_learn(struct array *cw, struct cr_stage *stage,
 		      &st, 0);
 #else
     comm->flgs[MYTHREAD] = st;
-#endif
 #endif
 
     crl_bi_to_si(cw->ptr,nkeep,stage->size_r);
