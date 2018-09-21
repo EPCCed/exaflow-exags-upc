@@ -1,5 +1,6 @@
 # exaflow-exags-upc
-This is a UPC version of the ExaGS library from the EU funded ExaFLOW Project.
+This is a UPC version of the ExaGS library developed as part of the the ExaFLOW Project.
+The ExaFLOW project has received funding from the European Union Horizon 2020 Framework Programme (H2020) under grant agreement number 671571
 
 ## Library Compilation
 To compile run the following commands, this will generate the static library ```libexags.a```. Change the first line to point to your UPC compiler of choice.
